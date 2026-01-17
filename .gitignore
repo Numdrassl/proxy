@@ -41,5 +41,3 @@ bin/
 
 ### Mac OS ###
 .DS_Store
-
-bridge/libs/HytaleServer.jar
