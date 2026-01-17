@@ -567,6 +567,7 @@ Enable `debugMode: true` in config for verbose packet logging.
 
 ## Documentation
 
+- [API JavaDocs](https://numdrassl.github.io/Numdrassl/) - Online API documentation
 - [Plugin Development Guide](docs/PLUGIN_DEVELOPMENT.md) - Complete plugin development reference
 - [Event Architecture](docs/EVENT_ARCHITECTURE.md) - Internal event system details
 - [Authentication Architecture](docs/AUTHENTICATION_ARCHITECTURE.md) - Auth flow documentation
@@ -601,7 +602,8 @@ Releases are versioned based on the **primary Hytale Server version** they're bu
 | Workflow | Trigger | Description |
 |----------|---------|-------------|
 | **Build** | All pushes & PRs to `main`/`dev` | Builds and tests the project |
-| **Release** | Push to `main` or `dev` | Creates GitHub releases with artifacts |
+| **Release** | Push tags (`v*` or Hytale version) | Creates GitHub releases with artifacts |
+| **Docs** | Push to `main` or release published | Publishes API JavaDocs to GitHub Pages |
 
 ### Creating a Release
 
