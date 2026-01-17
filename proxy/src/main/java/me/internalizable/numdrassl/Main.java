@@ -154,8 +154,9 @@ public class Main {
                     switch (command) {
                         case "help":
                             LOGGER.info("Available commands:");
-                            LOGGER.info("  auth login  - Start OAuth device code flow to authenticate proxy");
+                            LOGGER.info("  auth login  - Authenticate proxy with Hytale (for client auth)");
                             LOGGER.info("  auth status - Show authentication status");
+                            LOGGER.info("  auth secret - Show proxy secret for backend configuration");
                             LOGGER.info("  sessions    - List active sessions");
                             LOGGER.info("  stop        - Stop the proxy server");
                             break;
@@ -196,19 +197,19 @@ public class Main {
 
     private static void handleAuthCommand(String[] parts) {
         if (parts.length < 2) {
-            LOGGER.info("Usage: auth <login|status>");
-            return;
-        }
-
-        var authenticator = proxyServer.getAuthenticator();
-        if (authenticator == null) {
-            LOGGER.error("Authenticator not available");
+            LOGGER.info("Usage: auth <login|status|secret>");
             return;
         }
 
         String subCommand = parts[1].toLowerCase();
         switch (subCommand) {
             case "login":
+                var authenticator = proxyServer.getAuthenticator();
+                if (authenticator == null) {
+                    LOGGER.error("Authenticator not available");
+                    return;
+                }
+
                 if (authenticator.isAuthenticated()) {
                     LOGGER.info("Proxy is already authenticated as: {} ({})",
                         authenticator.getProfileUsername(), authenticator.getProfileUuid());
@@ -244,18 +245,32 @@ public class Main {
                 break;
 
             case "status":
-                if (authenticator.isAuthenticated()) {
-                    LOGGER.info("Proxy is authenticated as: {} ({})",
-                        authenticator.getProfileUsername(), authenticator.getProfileUuid());
-                    LOGGER.info("Certificate fingerprint: {}", authenticator.getProxyFingerprint());
+                var auth = proxyServer.getAuthenticator();
+                if (auth != null && auth.isAuthenticated()) {
+                    LOGGER.info("Proxy authenticated as: {} ({})",
+                        auth.getProfileUsername(), auth.getProfileUuid());
+                    LOGGER.info("Certificate fingerprint: {}", auth.getProxyFingerprint());
                 } else {
-                    LOGGER.info("Proxy is NOT authenticated");
+                    LOGGER.info("Proxy is NOT authenticated with Hytale");
                     LOGGER.info("Use 'auth login' to authenticate");
+                }
+                LOGGER.info("");
+                LOGGER.info("Backend authentication: Secret-based (HMAC referral)");
+                break;
+
+            case "secret":
+                byte[] secret = proxyServer.getBackendConnector().getProxySecret();
+                if (secret != null) {
+                    String secretStr = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(secret);
+                    LOGGER.info("Current proxy secret (Base64): {}", secretStr);
+                    LOGGER.info("Configure this same secret on your backend servers.");
+                } else {
+                    LOGGER.warn("No proxy secret configured!");
                 }
                 break;
 
             default:
-                LOGGER.info("Usage: auth <login|status>");
+                LOGGER.info("Usage: auth <login|status|secret>");
         }
     }
 

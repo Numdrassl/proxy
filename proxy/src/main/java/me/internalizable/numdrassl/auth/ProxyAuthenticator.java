@@ -517,7 +517,160 @@ public class ProxyAuthenticator {
         }
     }
 
-    // ==================== Auth Grant Exchange ====================
+    // ==================== Client-Facing Auth (Proxy acts as server) ====================
+
+    /**
+     * Result of requesting an auth grant for a client.
+     */
+    public static class AuthGrantResult {
+        public final String authorizationGrant;
+        public final String serverIdentityToken;
+
+        public AuthGrantResult(String authorizationGrant, String serverIdentityToken) {
+            this.authorizationGrant = authorizationGrant;
+            this.serverIdentityToken = serverIdentityToken;
+        }
+    }
+
+    /**
+     * Request an authorization grant for a client connecting to this proxy.
+     * This is called when the proxy receives a Connect packet from a client.
+     *
+     * The proxy acts as a Hytale server and needs to:
+     * 1. Validate the client's identity token
+     * 2. Request an auth grant from the session service
+     * 3. Return the grant along with the proxy's identity token
+     *
+     * @param clientUuid The client's UUID from the Connect packet
+     * @param clientUsername The client's username
+     * @param clientIdentityToken The client's identity token
+     * @return AuthGrantResult containing the authorization grant and server identity token
+     */
+    public CompletableFuture<AuthGrantResult> requestAuthGrantForClient(
+            @Nonnull UUID clientUuid,
+            @Nonnull String clientUsername,
+            @Nullable String clientIdentityToken) {
+
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                if (sessionToken == null) {
+                    LOGGER.error("Cannot request auth grant for client - proxy not authenticated!");
+                    return null;
+                }
+
+                LOGGER.info("Requesting authorization grant for client {} ({})", clientUsername, clientUuid);
+
+                // Build the request to session service
+                // The session service expects either identityToken OR uuid
+                JsonObject requestBody = new JsonObject();
+
+                if (clientIdentityToken != null && !clientIdentityToken.isEmpty()) {
+                    // Preferred: use the client's identity token
+                    requestBody.addProperty("identityToken", clientIdentityToken);
+                } else {
+                    // Fallback: use UUID
+                    requestBody.addProperty("uuid", clientUuid.toString());
+                }
+
+                // Add server's certificate fingerprint for token binding
+                if (proxyFingerprint != null) {
+                    requestBody.addProperty("x509Fingerprint", proxyFingerprint);
+                }
+
+                HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(SESSION_SERVICE_URL + "/server-join/auth-grant"))
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
+                    .header("Authorization", "Bearer " + sessionToken)
+                    .header("User-Agent", USER_AGENT)
+                    .POST(HttpRequest.BodyPublishers.ofString(GSON.toJson(requestBody)))
+                    .timeout(Duration.ofSeconds(30))
+                    .build();
+
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+                if (response.statusCode() == 200) {
+                    JsonObject json = JsonParser.parseString(response.body()).getAsJsonObject();
+                    String authGrant = getJsonString(json, "authorizationGrant");
+                    String serverIdToken = identityToken; // Use proxy's identity token
+
+                    if (authGrant != null) {
+                        LOGGER.info("Successfully obtained authorization grant for client {}", clientUsername);
+                        return new AuthGrantResult(authGrant, serverIdToken);
+                    }
+                }
+
+                LOGGER.error("Failed to get auth grant for client: HTTP {} - {}",
+                    response.statusCode(), response.body());
+                return null;
+
+            } catch (Exception e) {
+                LOGGER.error("Error requesting auth grant for client", e);
+                return null;
+            }
+        });
+    }
+
+    /**
+     * Exchange a server authorization grant for a server access token.
+     * This is called when the proxy receives an AuthToken from a client
+     * containing a serverAuthorizationGrant that the client wants us to exchange.
+     *
+     * @param serverAuthGrant The server authorization grant from the client's AuthToken
+     * @return The server access token to send back in ServerAuthToken
+     */
+    public CompletableFuture<String> exchangeServerAuthGrant(@Nonnull String serverAuthGrant) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                if (sessionToken == null) {
+                    LOGGER.error("Cannot exchange server auth grant - proxy not authenticated!");
+                    return null;
+                }
+
+                if (proxyFingerprint == null) {
+                    LOGGER.error("Cannot exchange server auth grant - no certificate fingerprint!");
+                    return null;
+                }
+
+                LOGGER.info("Exchanging server authorization grant for server access token...");
+
+                JsonObject requestBody = new JsonObject();
+                requestBody.addProperty("authorizationGrant", serverAuthGrant);
+                requestBody.addProperty("x509Fingerprint", proxyFingerprint);
+
+                HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(SESSION_SERVICE_URL + "/server-join/auth-token"))
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
+                    .header("Authorization", "Bearer " + sessionToken)
+                    .header("User-Agent", USER_AGENT)
+                    .POST(HttpRequest.BodyPublishers.ofString(GSON.toJson(requestBody)))
+                    .timeout(Duration.ofSeconds(30))
+                    .build();
+
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+                if (response.statusCode() == 200) {
+                    JsonObject json = JsonParser.parseString(response.body()).getAsJsonObject();
+                    String accessToken = getJsonString(json, "accessToken");
+                    if (accessToken != null) {
+                        LOGGER.info("Successfully exchanged server auth grant for access token!");
+                        return accessToken;
+                    }
+                }
+
+                LOGGER.error("Failed to exchange server auth grant: HTTP {} - {}",
+                    response.statusCode(), response.body());
+                return null;
+
+            } catch (Exception e) {
+                LOGGER.error("Error exchanging server authorization grant", e);
+                return null;
+            }
+        });
+    }
+
+    // ==================== Auth Grant Exchange (Proxy -> Backend) ====================
 
     /**
      * Exchange an authorization grant for an access token.

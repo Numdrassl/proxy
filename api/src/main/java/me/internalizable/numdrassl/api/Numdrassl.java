@@ -58,5 +58,15 @@ public final class Numdrassl {
         }
         proxy = proxyServer;
     }
+
+    /**
+     * Initialize the API with the proxy server instance.
+     * Alias for {@link #setProxy(ProxyServer)}.
+     *
+     * @param proxyServer the proxy server instance
+     */
+    public static void setServer(@Nonnull ProxyServer proxyServer) {
+        setProxy(proxyServer);
+    }
 }
 

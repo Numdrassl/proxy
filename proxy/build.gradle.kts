@@ -15,6 +15,9 @@ dependencies {
     // Numdrassl API
     api(project(":api"))
 
+    // Common module with SecretMessageUtil
+    implementation(project(":common"))
+
     // Netty Core
     implementation("io.netty:netty-common:$nettyVersion")
     implementation("io.netty:netty-buffer:$nettyVersion")
@@ -43,6 +46,9 @@ dependencies {
     // Gson for JSON parsing
     implementation("com.google.code.gson:gson:2.10.1")
 
+    // Guava for collections utilities
+    implementation("com.google.guava:guava:32.1.3-jre")
+
     // Configuration (YAML)
     implementation("org.yaml:snakeyaml:2.2")
 
@@ -68,6 +74,7 @@ tasks.withType<JavaCompile> {
 }
 
 tasks.jar {
+    dependsOn(":api:jar", ":common:jar")
     manifest {
         attributes["Main-Class"] = "me.internalizable.numdrassl.Main"
     }

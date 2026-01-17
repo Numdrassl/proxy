@@ -17,6 +17,7 @@ import io.netty.incubator.codec.quic.QuicSslContext;
 import io.netty.incubator.codec.quic.QuicSslContextBuilder;
 import io.netty.incubator.codec.quic.QuicStreamChannel;
 import io.netty.incubator.codec.quic.QuicStreamType;
+import me.internalizable.numdrassl.common.SecretMessageUtil;
 import me.internalizable.numdrassl.config.BackendServer;
 import me.internalizable.numdrassl.pipeline.BackendPacketHandler;
 import me.internalizable.numdrassl.pipeline.ProxyPacketDecoder;
@@ -29,6 +30,9 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.Nonnull;
 import java.net.InetSocketAddress;
 import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -41,11 +45,51 @@ public class BackendConnector {
     private final ProxyServer proxyServer;
     private final EventLoopGroup group;
     private QuicSslContext sslContext;
+    private byte[] proxySecret;
 
     public BackendConnector(@Nonnull ProxyServer proxyServer) {
         this.proxyServer = proxyServer;
         this.group = new NioEventLoopGroup(2);
         // SSL context will be initialized when initSslContext is called
+        // Proxy secret will be initialized from config or generated
+        initProxySecret();
+    }
+
+    /**
+     * Initialize the proxy secret from config or generate a random one.
+     */
+    private void initProxySecret() {
+        String configSecret = proxyServer.getConfig().getProxySecret();
+
+        // Check environment variable first
+        String envSecret = System.getenv("NUMDRASSL_SECRET");
+        if (envSecret != null && !envSecret.isEmpty()) {
+            this.proxySecret = envSecret.getBytes(StandardCharsets.UTF_8);
+            LOGGER.info("Using proxy secret from NUMDRASSL_SECRET environment variable");
+            return;
+        }
+
+        if (configSecret != null && !configSecret.isEmpty()) {
+            this.proxySecret = configSecret.getBytes(StandardCharsets.UTF_8);
+            LOGGER.info("Using proxy secret from config");
+        } else {
+            // Generate a random secret
+            SecureRandom random = new SecureRandom();
+            byte[] secretBytes = new byte[32];
+            random.nextBytes(secretBytes);
+            this.proxySecret = secretBytes;
+
+            String generatedSecret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
+            LOGGER.warn("No proxy secret configured! Generated random secret: {}", generatedSecret);
+            LOGGER.warn("Set this in config.yml or NUMDRASSL_SECRET env var, and configure backends to use the same secret!");
+        }
+    }
+
+    /**
+     * Get the proxy secret for HMAC signing.
+     */
+    public byte[] getProxySecret() {
+        return proxySecret;
     }
 
     /**
@@ -93,10 +137,35 @@ public class BackendConnector {
      * Connect a session to a backend server
      */
     public void connect(@Nonnull ProxySession session, @Nonnull BackendServer backend, @Nonnull Connect connectPacket) {
+        // Fire ServerPreConnectEvent to allow plugins to redirect or cancel
+        var apiServer = proxyServer.getApiServer();
+        BackendServer targetBackend = backend;
+        if (apiServer != null) {
+            var eventBridge = apiServer.getEventBridge();
+            if (eventBridge != null) {
+                var result = eventBridge.fireServerPreConnectEvent(session, backend);
+                if (result == null || !result.isAllowed()) {
+                    String reason = result != null ? result.getDenyReason() : "Connection denied";
+                    LOGGER.info("Session {}: Server connection denied by plugin: {}",
+                        session.getSessionId(), reason);
+                    session.disconnect(reason != null ? reason : "Connection denied");
+                    return;
+                }
+                // Check if redirected
+                if (result.getTargetServer() != null) {
+                    targetBackend = result.getTargetServer();
+                }
+            }
+        }
+
         LOGGER.info("Session {}: Initiating connection to backend {} ({}:{})",
-            session.getSessionId(), backend.getName(), backend.getHost(), backend.getPort());
+            session.getSessionId(), targetBackend.getName(), targetBackend.getHost(), targetBackend.getPort());
+
+        // Store the target backend for later reference
+        session.setCurrentBackend(targetBackend);
 
         boolean debugMode = proxyServer.getConfig().isDebugMode();
+        final BackendServer finalBackend = targetBackend;
 
         try {
             ChannelHandler codec = new QuicClientCodecBuilder()
@@ -114,7 +183,7 @@ public class BackendConnector {
                 .channel(NioDatagramChannel.class)
                 .handler(codec);
 
-            InetSocketAddress backendAddress = new InetSocketAddress(backend.getHost(), backend.getPort());
+            InetSocketAddress backendAddress = new InetSocketAddress(finalBackend.getHost(), finalBackend.getPort());
 
             // Create the datagram channel first
             Channel datagramChannel = bootstrap.bind(0).sync().channel();
@@ -167,11 +236,14 @@ public class BackendConnector {
                 QuicStreamChannel backendStream = (QuicStreamChannel) streamFuture.getNow();
                 session.setBackendStream(backendStream);
 
-                LOGGER.info("Session {}: Backend stream created, forwarding Connect packet",
+                LOGGER.info("Session {}: Backend stream created, forwarding Connect packet with signed referral",
                     session.getSessionId());
 
+                // Create a modified Connect packet with signed referral data
+                Connect proxyConnect = createSignedConnectPacket(session, connectPacket);
+
                 // Forward the Connect packet to the backend
-                backendStream.writeAndFlush(connectPacket);
+                backendStream.writeAndFlush(proxyConnect);
                 session.setState(SessionState.AUTHENTICATING);
 
             } else {
@@ -183,14 +255,70 @@ public class BackendConnector {
     }
 
     /**
+     * Create a Connect packet with signed referral data for backend authentication.
+     * The backend will validate this signature instead of JWT certificate validation.
+     */
+    private Connect createSignedConnectPacket(ProxySession session, Connect originalConnect) {
+        BackendServer backend = session.getCurrentBackend();
+        String backendName = backend != null ? backend.getName() : "unknown";
+
+        // Create signed referral data
+        byte[] referralData = SecretMessageUtil.createPlayerInfoReferral(
+            session.getPlayerUuid(),
+            session.getUsername(),
+            backendName,
+            session.getClientAddress(),
+            proxySecret
+        );
+
+        LOGGER.debug("Session {}: Created signed referral data ({} bytes) for backend {}",
+            session.getSessionId(), referralData.length, backendName);
+
+        // Create a new Connect packet with the signed referral data
+        Connect proxyConnect = new Connect(originalConnect);
+        proxyConnect.referralData = referralData;
+
+        // Note: We keep the original identityToken as the backend might still use it
+        // for player identity purposes (just not for certificate validation)
+
+        return proxyConnect;
+    }
+
+    /**
      * Reconnect a session to a new backend server (for server switching).
      * This is called when a player transfers from one server to another.
      */
     public void reconnect(@Nonnull ProxySession session, @Nonnull BackendServer backend, @Nonnull Connect connectPacket) {
-        LOGGER.info("Session {}: Reconnecting to backend {} ({}:{})",
-            session.getSessionId(), backend.getName(), backend.getHost(), backend.getPort());
+        // Fire ServerPreConnectEvent to allow plugins to redirect or cancel
+        var apiServer = proxyServer.getApiServer();
+        BackendServer targetBackend = backend;
+        if (apiServer != null) {
+            var eventBridge = apiServer.getEventBridge();
+            if (eventBridge != null) {
+                var result = eventBridge.fireServerPreConnectEvent(session, backend);
+                if (result == null || !result.isAllowed()) {
+                    String reason = result != null ? result.getDenyReason() : "Transfer denied";
+                    LOGGER.info("Session {}: Server transfer denied by plugin: {}",
+                        session.getSessionId(), reason);
+                    sendTransferFailedMessage(session, backend.getName());
+                    // Revert state
+                    session.setState(SessionState.CONNECTED);
+                    session.setServerTransfer(false);
+                    return;
+                }
+                // Check if redirected
+                if (result.getTargetServer() != null) {
+                    targetBackend = result.getTargetServer();
+                }
+            }
+        }
 
+        LOGGER.info("Session {}: Reconnecting to backend {} ({}:{})",
+            session.getSessionId(), targetBackend.getName(), targetBackend.getHost(), targetBackend.getPort());
+
+        session.setCurrentBackend(targetBackend);
         boolean debugMode = proxyServer.getConfig().isDebugMode();
+        final BackendServer finalBackend = targetBackend;
 
         try {
             ChannelHandler codec = new QuicClientCodecBuilder()
@@ -208,7 +336,7 @@ public class BackendConnector {
                 .channel(NioDatagramChannel.class)
                 .handler(codec);
 
-            InetSocketAddress backendAddress = new InetSocketAddress(backend.getHost(), backend.getPort());
+            InetSocketAddress backendAddress = new InetSocketAddress(finalBackend.getHost(), finalBackend.getPort());
 
             // Create the datagram channel first
             Channel datagramChannel = bootstrap.bind(0).sync().channel();
@@ -229,12 +357,12 @@ public class BackendConnector {
                 .addListener(future -> {
                     if (future.isSuccess()) {
                         QuicChannel backendChannel = (QuicChannel) future.getNow();
-                        handleReconnectSuccess(session, backendChannel, backend, connectPacket, debugMode);
+                        handleReconnectSuccess(session, backendChannel, finalBackend, connectPacket, debugMode);
                     } else {
                         LOGGER.error("Session {}: Failed to reconnect to backend {}",
-                            session.getSessionId(), backend.getName(), future.cause());
+                            session.getSessionId(), finalBackend.getName(), future.cause());
                         // Send error message to client and revert state
-                        sendTransferFailedMessage(session, backend.getName());
+                        sendTransferFailedMessage(session, finalBackend.getName());
                     }
                 });
 
@@ -264,11 +392,14 @@ public class BackendConnector {
                 session.setBackendStream(backendStream);
                 session.setCurrentBackend(backend);
 
-                LOGGER.info("Session {}: Backend stream created for {}, forwarding Connect packet",
+                LOGGER.info("Session {}: Backend stream created for {}, forwarding Connect packet with signed referral",
                     session.getSessionId(), backend.getName());
 
+                // Create a modified Connect packet with signed referral data
+                Connect proxyConnect = createSignedConnectPacket(session, connectPacket);
+
                 // Forward the Connect packet to the backend
-                backendStream.writeAndFlush(connectPacket);
+                backendStream.writeAndFlush(proxyConnect);
                 session.setState(SessionState.AUTHENTICATING);
 
                 // Send transfer success message to client

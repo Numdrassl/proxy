@@ -1,0 +1,15 @@
+{
+  "Group": "Numdrassl",
+  "Name": "Bridge",
+  "Version": "1.0.0",
+  "Authors": [
+    {
+      "Name": "Elie Sfeir",
+      "Email": "me@internalizable.dev",
+      "Url": "https://www.internalizable.dev/"
+    }
+  ],
+  "Website": "https://www.internalizable.dev",
+  "Main": "me.internalizable.numdrassl.Bridge",
+  "ServerVersion": "*"
+}

@@ -25,6 +25,7 @@ public class ProxyConfig {
     private int connectionTimeoutSeconds = 30;
     private boolean debugMode = false;
     private boolean passthroughMode = false;
+    private String proxySecret = null; // Shared secret for backend authentication (if null, generates random)
     private List<BackendServer> backends = new ArrayList<>();
 
     public ProxyConfig() {
@@ -135,6 +136,14 @@ public class ProxyConfig {
 
     public void setPassthroughMode(boolean passthroughMode) {
         this.passthroughMode = passthroughMode;
+    }
+
+    public String getProxySecret() {
+        return proxySecret;
+    }
+
+    public void setProxySecret(String proxySecret) {
+        this.proxySecret = proxySecret;
     }
 
     public List<BackendServer> getBackends() {

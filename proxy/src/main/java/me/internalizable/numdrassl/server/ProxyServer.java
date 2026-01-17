@@ -13,12 +13,16 @@ import io.netty.incubator.codec.quic.QuicServerCodecBuilder;
 import io.netty.incubator.codec.quic.QuicSslContext;
 import io.netty.incubator.codec.quic.QuicSslContextBuilder;
 import io.netty.incubator.codec.quic.QuicStreamChannel;
+import me.internalizable.numdrassl.api.Numdrassl;
+import me.internalizable.numdrassl.api.event.proxy.ProxyInitializeEvent;
+import me.internalizable.numdrassl.api.event.proxy.ProxyShutdownEvent;
+import me.internalizable.numdrassl.auth.ProxyAuthenticator;
 import me.internalizable.numdrassl.config.ProxyConfig;
 import me.internalizable.numdrassl.event.EventManager;
 import me.internalizable.numdrassl.pipeline.ClientPacketHandler;
 import me.internalizable.numdrassl.pipeline.ProxyPacketDecoder;
 import me.internalizable.numdrassl.pipeline.ProxyPacketEncoder;
-import me.internalizable.numdrassl.auth.ProxyAuthenticator;
+import me.internalizable.numdrassl.plugin.NumdrasslProxyServer;
 import me.internalizable.numdrassl.session.ProxySession;
 import me.internalizable.numdrassl.session.SessionManager;
 import org.slf4j.Logger;
@@ -31,8 +35,15 @@ import java.net.InetSocketAddress;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Main Hytale QUIC Proxy Server
- * Accepts client connections and proxies them to backend servers
+ * Main Hytale QUIC Proxy Server.
+ *
+ * <p>Authentication flow:</p>
+ * <ul>
+ *   <li><b>Client → Proxy</b>: Standard Hytale authentication (JWT/mTLS).
+ *       The proxy authenticates with Hytale session service as a genuine server.</li>
+ *   <li><b>Proxy → Backend</b>: Secret-based authentication (HMAC referral data).
+ *       The backend trusts the proxy via a shared secret, no Hytale auth needed.</li>
+ * </ul>
  */
 public class ProxyServer {
 
@@ -44,6 +55,7 @@ public class ProxyServer {
     private final BackendConnector backendConnector;
     private final ProxyAuthenticator authenticator;
     private final ReferralManager referralManager;
+    private NumdrasslProxyServer apiServer;
 
     private EventLoopGroup group;
     private Channel serverChannel;
@@ -74,16 +86,18 @@ public class ProxyServer {
         LOGGER.info("Bind address: {}:{}", config.getBindAddress(), config.getBindPort());
         LOGGER.info("Debug mode: {}", config.isDebugMode());
 
-        // Initialize the proxy authenticator
+        // Initialize the proxy authenticator (for client-facing auth)
         authenticator.initialize();
         if (authenticator.isAuthenticated()) {
             LOGGER.info("Proxy authenticated as: {} ({})",
                 authenticator.getProfileUsername(), authenticator.getProfileUuid());
         } else {
-            LOGGER.warn("Proxy is NOT authenticated!");
-            LOGGER.warn("Layer 7 packet inspection will NOT work without authentication.");
-            LOGGER.warn("Use 'auth login' command or --l4 flag for Layer 4 mode.");
+            LOGGER.warn("Proxy is NOT authenticated with Hytale!");
+            LOGGER.warn("Clients will not be able to authenticate.");
+            LOGGER.warn("Use 'auth login' command to authenticate the proxy.");
         }
+
+        LOGGER.info("Backend authentication: Secret-based (HMAC referral)");
 
         // Load SSL context
         QuicSslContext sslContext = createSslContext();
@@ -149,6 +163,31 @@ public class ProxyServer {
                 backend.getName(), backend.getHost(), backend.getPort(),
                 backend.isDefaultServer() ? "(default)" : "");
         }
+
+        // Initialize the API server and load plugins
+        initializeApiServer();
+    }
+
+    /**
+     * Initialize the API server, load plugins, and fire ProxyInitializeEvent.
+     */
+    private void initializeApiServer() {
+        LOGGER.info("Initializing API server and loading plugins...");
+
+        // Create the API server wrapper
+        apiServer = new NumdrasslProxyServer(this);
+
+        // Set the static API accessor
+        Numdrassl.setServer(apiServer);
+
+        // Initialize (loads and enables plugins)
+        apiServer.initialize();
+
+        // Fire the ProxyInitializeEvent
+        apiServer.getNumdrasslEventManager().fireSync(new ProxyInitializeEvent());
+
+        LOGGER.info("API server initialized, {} plugin(s) loaded",
+            apiServer.getPluginManager().getPlugins().size());
     }
 
     private void handleNewConnection(QuicChannel quicChannel) {
@@ -181,8 +220,6 @@ public class ProxyServer {
         }
 
         // Initialize the backend connector with the same certificate
-        // This is critical: the client binds their token to the cert fingerprint they see,
-        // so the backend must see the same fingerprint when we connect
         backendConnector.initSslContext(config.getCertificatePath(), config.getPrivateKeyPath());
 
         return QuicSslContextBuilder.forServer(
@@ -206,6 +243,12 @@ public class ProxyServer {
         LOGGER.info("Stopping Hytale QUIC Proxy Server...");
 
         running = false;
+
+        // Fire ProxyShutdownEvent and shutdown API server
+        if (apiServer != null) {
+            apiServer.getNumdrasslEventManager().fireSync(new ProxyShutdownEvent());
+            apiServer.shutdownApi();
+        }
 
         // Close all sessions
         sessionManager.closeAll();
@@ -264,6 +307,11 @@ public class ProxyServer {
     @Nonnull
     public ReferralManager getReferralManager() {
         return referralManager;
+    }
+
+    @Nullable
+    public NumdrasslProxyServer getApiServer() {
+        return apiServer;
     }
 }
 

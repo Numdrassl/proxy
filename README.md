@@ -289,6 +289,59 @@ proxyServer.getEventManager().registerListener(new PacketListener() {
 
 Private/Proprietary
 
+## Plugin Development
+
+Numdrassl supports plugins that can intercept events, register commands, and modify player behavior.
+
+### Quick Start
+
+1. **Add the API dependency** to your plugin's `build.gradle.kts`:
+
+```kotlin
+dependencies {
+    compileOnly("me.internalizable.numdrassl:api:1.0-SNAPSHOT")
+}
+```
+
+2. **Create your main class**:
+
+```java
+@Plugin(id = "my-plugin", name = "My Plugin", version = "1.0.0")
+public class MyPlugin {
+
+    @Subscribe
+    public void onInit(ProxyInitializeEvent event) {
+        Numdrassl.getProxy().getEventManager().register(this, new MyListener());
+    }
+}
+```
+
+3. **Listen for events**:
+
+```java
+public class MyListener {
+
+    @Subscribe
+    public void onChat(PlayerChatEvent event) {
+        // Modify or cancel chat messages
+    }
+
+    @Subscribe
+    public void onCommand(PlayerCommandEvent event) {
+        // Handle commands
+    }
+}
+```
+
+### Documentation
+
+- [Plugin Development Guide](docs/PLUGIN_DEVELOPMENT.md) - Full guide for plugin developers
+- [Event Architecture](docs/EVENT_ARCHITECTURE.md) - Internal event system documentation
+
+### API Dependency
+
+Plugins only depend on the `api/` module. The proxy implementation (`proxy/`) is not needed at compile time.
+
 ## Notes
 
 - Self-signed certificates are auto-generated on first run
