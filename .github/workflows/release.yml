@@ -1,0 +1,192 @@
+name: Release
+
+on:
+  push:
+    branches: [ main, master, dev ]
+    tags:
+      - 'v*'
+      - '[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9]-*'  # Hytale version format: 2026.01.17-*
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25-ea'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build with Gradle
+        run: ./gradlew build --no-daemon
+
+      - name: Get Hytale server versions from gradle.properties
+        id: hytale_version
+        run: |
+          # Get all compatible versions (comma-separated)
+          ALL_VERSIONS=$(grep "^hytaleServerVersions=" gradle.properties | cut -d'=' -f2 || echo "unknown")
+          echo "all_versions=$ALL_VERSIONS" >> $GITHUB_OUTPUT
+          
+          # Get primary version (first in list) for tagging
+          PRIMARY_VERSION=$(echo "$ALL_VERSIONS" | cut -d',' -f1 | xargs)
+          echo "primary_version=$PRIMARY_VERSION" >> $GITHUB_OUTPUT
+          
+          # Count versions
+          VERSION_COUNT=$(echo "$ALL_VERSIONS" | tr ',' '\n' | wc -l)
+          echo "version_count=$VERSION_COUNT" >> $GITHUB_OUTPUT
+          
+          # Format for display (replace commas with newlines for markdown)
+          VERSIONS_LIST=$(echo "$ALL_VERSIONS" | tr ',' '\n' | sed 's/^/- `/' | sed 's/$/`/')
+          echo "versions_list<<EOF" >> $GITHUB_OUTPUT
+          echo "$VERSIONS_LIST" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "Hytale Server Versions: $ALL_VERSIONS"
+          echo "Primary Version: $PRIMARY_VERSION"
+
+      - name: Get project version from gradle.properties
+        id: version
+        run: |
+          VERSION=$(grep "^version=" gradle.properties | cut -d'=' -f2 || echo "1.0-SNAPSHOT")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Project version: $VERSION"
+
+      - name: Determine release type
+        id: release_type
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          if [[ "$BRANCH" == "main" || "$BRANCH" == "master" ]]; then
+            echo "type=stable" >> $GITHUB_OUTPUT
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+            echo "suffix=" >> $GITHUB_OUTPUT
+          elif [[ "$BRANCH" == "dev" ]]; then
+            echo "type=dev" >> $GITHUB_OUTPUT
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+            echo "suffix=-dev" >> $GITHUB_OUTPUT
+          else
+            echo "type=other" >> $GITHUB_OUTPUT
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+            echo "suffix=-$BRANCH" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create release tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            # Use the pushed tag
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            # Generate tag based on primary Hytale version + build number
+            PRIMARY_VER="${{ steps.hytale_version.outputs.primary_version }}"
+            SUFFIX="${{ steps.release_type.outputs.suffix }}"
+            BUILD_NUM="${{ github.run_number }}"
+            
+            if [[ "$PRIMARY_VER" != "unknown" && "$PRIMARY_VER" != "" ]]; then
+              TAG="${PRIMARY_VER}${SUFFIX}-build.${BUILD_NUM}"
+            else
+              TAG="v${{ steps.version.outputs.version }}${SUFFIX}-build.${BUILD_NUM}"
+            fi
+            echo "tag=$TAG" >> $GITHUB_OUTPUT
+          fi
+          echo "Release tag: ${{ steps.tag.outputs.tag || env.TAG }}"
+
+      - name: Prepare release artifacts
+        run: |
+          mkdir -p release
+          cp proxy/build/libs/proxy-*.jar release/ 2>/dev/null || true
+          cp api/build/libs/api-*.jar release/ 2>/dev/null || true
+          cp bridge/build/libs/bridge-*.jar release/ 2>/dev/null || true
+          # Remove javadoc and sources jars from release
+          rm -f release/*-javadoc.jar release/*-sources.jar 2>/dev/null || true
+          echo "Release artifacts:"
+          ls -la release/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "Numdrassl ${{ steps.tag.outputs.tag }}"
+          body: |
+            ## Numdrassl Proxy Release
+
+            **Release Type:** ${{ steps.release_type.outputs.type == 'stable' && '🟢 Stable' || '🟡 Development' }}
+            **Branch:** `${{ github.ref_name }}`
+            **Proxy Version:** `${{ steps.version.outputs.version }}`
+            **Build:** `#${{ github.run_number }}`
+            **Commit:** [`${{ github.sha }}`](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+
+            ---
+
+            ### 🎮 Compatible Hytale Server Versions
+
+            ${{ steps.hytale_version.outputs.versions_list }}
+
+            > **Primary Version:** `${{ steps.hytale_version.outputs.primary_version }}`
+
+            ---
+
+            ### 📦 Artifacts
+
+            | File | Description |
+            |------|-------------|
+            | `proxy-*.jar` | Main proxy server |
+            | `api-*.jar` | Plugin API (for plugin developers) |
+            | `bridge-*.jar` | Backend server plugin (install on Hytale servers) |
+
+            ---
+
+            ### 🚀 Quick Start
+
+            1. Download `proxy-*.jar`
+            2. Run: `java -jar proxy-*.jar`
+            3. Use `auth login` to authenticate with Hytale
+            4. See [README](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md) for full setup
+
+            ### 🔌 Backend Setup
+
+            1. Download `bridge-*.jar`
+            2. Place in your Hytale server's `plugins/` folder
+            3. Start server with `--auth-mode insecure --transport QUIC`
+            4. Configure matching `SecretKey` in both proxy and bridge configs
+
+          draft: false
+          prerelease: ${{ steps.release_type.outputs.prerelease }}
+          files: |
+            release/*.jar
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## 🎉 Release Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tag** | \`${{ steps.tag.outputs.tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Type** | ${{ steps.release_type.outputs.type }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Compatible Versions** | ${{ steps.hytale_version.outputs.version_count }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Primary Version** | \`${{ steps.hytale_version.outputs.primary_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Proxy Version** | \`${{ steps.version.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Compatible Hytale Versions" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.hytale_version.outputs.versions_list }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          ls -la release/*.jar >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No artifacts found"
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

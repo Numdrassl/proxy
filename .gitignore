@@ -2,7 +2,6 @@
 gradle/
 build/
 
-.github/
 .claude/
 
 !**/src/main/**/build/
