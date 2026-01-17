@@ -3,11 +3,6 @@
  */
 package com.hypixel.hytale.protocol;
 
-import com.hypixel.hytale.protocol.BoolParamValue;
-import com.hypixel.hytale.protocol.DoubleParamValue;
-import com.hypixel.hytale.protocol.IntParamValue;
-import com.hypixel.hytale.protocol.LongParamValue;
-import com.hypixel.hytale.protocol.StringParamValue;
 import com.hypixel.hytale.protocol.io.ProtocolException;
 import com.hypixel.hytale.protocol.io.ValidationResult;
 import com.hypixel.hytale.protocol.io.VarInt;

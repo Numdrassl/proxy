@@ -2,20 +2,17 @@ package me.internalizable.numdrassl.event.mapping.connection;
 
 import com.hypixel.hytale.protocol.packets.connection.Connect;
 import me.internalizable.numdrassl.api.event.connection.LoginEvent;
-import me.internalizable.numdrassl.api.player.Player;
-import me.internalizable.numdrassl.event.PacketContext;
-import me.internalizable.numdrassl.event.PacketEventMapping;
+import me.internalizable.numdrassl.event.mapping.PacketContext;
+import me.internalizable.numdrassl.event.mapping.PacketEventMapping;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.util.Objects;
 
 /**
- * Maps Connect packet to LoginEvent.
- *
- * <p>Protocol: {@link com.hypixel.hytale.protocol.packets.connection.Connect}</p>
- * <p>Event: {@link LoginEvent}</p>
+ * Maps Connect packet (client -> server) to LoginEvent.
  */
-public class ConnectMapping implements PacketEventMapping<Connect, LoginEvent> {
+public final class ConnectMapping implements PacketEventMapping<Connect, LoginEvent> {
 
     @Override
     @Nonnull
@@ -32,11 +29,13 @@ public class ConnectMapping implements PacketEventMapping<Connect, LoginEvent> {
     @Override
     @Nullable
     public LoginEvent createEvent(@Nonnull PacketContext context, @Nonnull Connect packet) {
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(packet, "packet");
+
         if (!context.isClientToServer()) {
             return null;
         }
 
-        // The player object is already created by PacketContext
         return new LoginEvent(context.getPlayer());
     }
 
@@ -45,13 +44,15 @@ public class ConnectMapping implements PacketEventMapping<Connect, LoginEvent> {
     public Connect applyChanges(@Nonnull PacketContext context,
                                  @Nonnull Connect packet,
                                  @Nonnull LoginEvent event) {
-        // Login events don't modify the packet, just allow/deny
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(packet, "packet");
+        Objects.requireNonNull(event, "event");
         return packet;
     }
 
     @Override
     public boolean isCancelled(@Nonnull LoginEvent event) {
+        Objects.requireNonNull(event, "event");
         return !event.getResult().isAllowed();
     }
 }
-

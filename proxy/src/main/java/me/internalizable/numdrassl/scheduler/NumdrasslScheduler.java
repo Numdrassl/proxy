@@ -8,33 +8,58 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Implementation of the API Scheduler.
+ *
+ * <p>Provides task scheduling capabilities for plugins with support for:
+ * <ul>
+ *   <li>Immediate async execution</li>
+ *   <li>Delayed execution</li>
+ *   <li>Repeating tasks at fixed intervals</li>
+ * </ul>
+ *
+ * <p>Tasks are tracked per-plugin for bulk cancellation during plugin unload.</p>
  */
-public class NumdrasslScheduler implements Scheduler {
+public final class NumdrasslScheduler implements Scheduler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(NumdrasslScheduler.class);
+    private static final int SHUTDOWN_TIMEOUT_SECONDS = 5;
 
     private final ScheduledExecutorService executor;
     private final Map<Object, Set<NumdrasslScheduledTask>> pluginTasks = new ConcurrentHashMap<>();
 
+    // ==================== Construction ====================
+
     public NumdrasslScheduler() {
-        this.executor = Executors.newScheduledThreadPool(
-            Runtime.getRuntime().availableProcessors(),
-            r -> {
-                Thread t = new Thread(r, "Numdrassl-Scheduler");
-                t.setDaemon(true);
-                return t;
-            }
-        );
+        this.executor = createDefaultExecutor();
     }
 
-    public NumdrasslScheduler(ScheduledExecutorService executor) {
-        this.executor = executor;
+    public NumdrasslScheduler(@Nonnull ScheduledExecutorService executor) {
+        this.executor = Objects.requireNonNull(executor, "executor");
     }
+
+    private ScheduledExecutorService createDefaultExecutor() {
+        int threads = Runtime.getRuntime().availableProcessors();
+        AtomicInteger threadCounter = new AtomicInteger(0);
+
+        return Executors.newScheduledThreadPool(threads, runnable -> {
+            Thread thread = new Thread(runnable, "Numdrassl-Scheduler-" + threadCounter.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        });
+    }
+
+    // ==================== Scheduler API ====================
 
     @Override
     @Nonnull
@@ -63,51 +88,78 @@ public class NumdrasslScheduler implements Scheduler {
 
     @Override
     @Nonnull
-    public ScheduledTask runRepeating(@Nonnull Object plugin, @Nonnull Runnable task,
-                                       long initialDelay, long period, @Nonnull TimeUnit unit) {
+    public ScheduledTask runRepeating(
+            @Nonnull Object plugin,
+            @Nonnull Runnable task,
+            long initialDelay,
+            long period,
+            @Nonnull TimeUnit unit) {
+
         Objects.requireNonNull(plugin, "plugin");
         Objects.requireNonNull(task, "task");
         Objects.requireNonNull(unit, "unit");
         return scheduleTask(plugin, task, initialDelay, period, unit);
     }
 
+    @Override
+    public void cancelAll(@Nonnull Object plugin) {
+        Objects.requireNonNull(plugin, "plugin");
+
+        Set<NumdrasslScheduledTask> tasks = pluginTasks.remove(plugin);
+        if (tasks != null) {
+            tasks.forEach(NumdrasslScheduledTask::cancel);
+            LOGGER.debug("Cancelled {} task(s) for plugin {}", tasks.size(), plugin.getClass().getSimpleName());
+        }
+    }
+
+    // ==================== Internal Scheduling ====================
+
+    @Nonnull
     ScheduledTask scheduleTask(Object plugin, Runnable task, long delay, long period, TimeUnit unit) {
         NumdrasslScheduledTask scheduledTask = new NumdrasslScheduledTask(plugin, task);
+        Runnable wrapper = createTaskWrapper(scheduledTask, period > 0);
 
-        Runnable wrapper = () -> {
-            if (scheduledTask.getStatus() == TaskStatus.CANCELLED) {
-                return;
-            }
-            scheduledTask.setStatus(TaskStatus.RUNNING);
-            try {
-                task.run();
-            } catch (Exception e) {
-                LOGGER.error("Error executing scheduled task for plugin {}",
-                    plugin.getClass().getSimpleName(), e);
-            } finally {
-                if (period <= 0) {
-                    scheduledTask.setStatus(TaskStatus.FINISHED);
-                    removeTask(plugin, scheduledTask);
-                } else {
-                    scheduledTask.setStatus(TaskStatus.SCHEDULED);
-                }
-            }
-        };
-
-        ScheduledFuture<?> future;
-        if (period > 0) {
-            future = executor.scheduleAtFixedRate(wrapper, delay, period, unit);
-        } else if (delay > 0) {
-            future = executor.schedule(wrapper, delay, unit);
-        } else {
-            future = executor.schedule(wrapper, 0, TimeUnit.MILLISECONDS);
-        }
-
+        ScheduledFuture<?> future = submitTask(wrapper, delay, period, unit);
         scheduledTask.setFuture(future);
         trackTask(plugin, scheduledTask);
 
         return scheduledTask;
     }
+
+    private Runnable createTaskWrapper(NumdrasslScheduledTask scheduledTask, boolean repeating) {
+        return () -> {
+            if (scheduledTask.getStatus() == TaskStatus.CANCELLED) {
+                return;
+            }
+
+            scheduledTask.setStatus(TaskStatus.RUNNING);
+            try {
+                scheduledTask.getTask().run();
+            } catch (Exception e) {
+                LOGGER.error("Error executing scheduled task for plugin {}",
+                    scheduledTask.getPlugin().getClass().getSimpleName(), e);
+            } finally {
+                if (repeating) {
+                    scheduledTask.setStatus(TaskStatus.SCHEDULED);
+                } else {
+                    scheduledTask.setStatus(TaskStatus.FINISHED);
+                    removeTask(scheduledTask.getPlugin(), scheduledTask);
+                }
+            }
+        };
+    }
+
+    private ScheduledFuture<?> submitTask(Runnable wrapper, long delay, long period, TimeUnit unit) {
+        if (period > 0) {
+            return executor.scheduleAtFixedRate(wrapper, delay, period, unit);
+        } else if (delay > 0) {
+            return executor.schedule(wrapper, delay, unit);
+        } else {
+            return executor.schedule(wrapper, 0, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    // ==================== Task Tracking ====================
 
     private void trackTask(Object plugin, NumdrasslScheduledTask task) {
         pluginTasks.computeIfAbsent(plugin, k -> ConcurrentHashMap.newKeySet()).add(task);
@@ -120,115 +172,42 @@ public class NumdrasslScheduler implements Scheduler {
         }
     }
 
-    @Override
-    public void cancelAll(@Nonnull Object plugin) {
-        Objects.requireNonNull(plugin, "plugin");
-
-        Set<NumdrasslScheduledTask> tasks = pluginTasks.remove(plugin);
-        if (tasks != null) {
-            for (NumdrasslScheduledTask task : tasks) {
-                task.cancel();
-            }
-        }
-    }
+    // ==================== Lifecycle ====================
 
     /**
-     * Shutdown the scheduler.
+     * Shuts down the scheduler, waiting for tasks to complete.
      */
     public void shutdown() {
+        LOGGER.debug("Shutting down scheduler...");
         executor.shutdown();
+
         try {
-            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+            if (!executor.awaitTermination(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                LOGGER.warn("Scheduler did not terminate gracefully, forcing shutdown");
                 executor.shutdownNow();
             }
         } catch (InterruptedException e) {
             executor.shutdownNow();
             Thread.currentThread().interrupt();
         }
+
+        pluginTasks.clear();
+        LOGGER.debug("Scheduler shut down");
     }
 
-    private static class NumdrasslScheduledTask implements ScheduledTask {
-        private final Object plugin;
-        private final Runnable task;
-        private volatile TaskStatus status = TaskStatus.SCHEDULED;
-        private volatile ScheduledFuture<?> future;
-
-        NumdrasslScheduledTask(Object plugin, Runnable task) {
-            this.plugin = plugin;
-            this.task = task;
-        }
-
-        void setFuture(ScheduledFuture<?> future) {
-            this.future = future;
-        }
-
-        void setStatus(TaskStatus status) {
-            this.status = status;
-        }
-
-        @Override
-        @Nonnull
-        public Object getPlugin() {
-            return plugin;
-        }
-
-        @Override
-        @Nonnull
-        public TaskStatus getStatus() {
-            return status;
-        }
-
-        @Override
-        public void cancel() {
-            status = TaskStatus.CANCELLED;
-            if (future != null) {
-                future.cancel(false);
-            }
-        }
+    /**
+     * Returns the number of plugins with active tasks.
+     */
+    public int getActivePluginCount() {
+        return pluginTasks.size();
     }
 
-    private static class NumdrasslTaskBuilder implements TaskBuilder {
-        private final NumdrasslScheduler scheduler;
-        private final Object plugin;
-        private final Runnable task;
-        private long delay = 0;
-        private long period = 0;
-        private TimeUnit unit = TimeUnit.MILLISECONDS;
-
-        NumdrasslTaskBuilder(NumdrasslScheduler scheduler, Object plugin, Runnable task) {
-            this.scheduler = scheduler;
-            this.plugin = plugin;
-            this.task = task;
-        }
-
-        @Override
-        @Nonnull
-        public TaskBuilder delay(long delay, @Nonnull TimeUnit unit) {
-            this.delay = delay;
-            this.unit = unit;
-            return this;
-        }
-
-        @Override
-        @Nonnull
-        public TaskBuilder repeat(long period, @Nonnull TimeUnit unit) {
-            this.period = period;
-            this.unit = unit;
-            return this;
-        }
-
-        @Override
-        @Nonnull
-        public TaskBuilder clearRepeat() {
-            this.period = 0;
-            return this;
-        }
-
-        @Override
-        @Nonnull
-        public ScheduledTask schedule() {
-            return scheduler.scheduleTask(plugin, task, delay, period, unit);
-        }
+    /**
+     * Returns the total number of tracked tasks.
+     */
+    public int getTotalTaskCount() {
+        return pluginTasks.values().stream()
+            .mapToInt(Set::size)
+            .sum();
     }
 }
-

@@ -9,14 +9,16 @@ import javax.annotation.Nonnull;
 import java.util.Optional;
 
 /**
- * Console command source implementation.
+ * CommandSource implementation for console commands.
+ * The console has all permissions and outputs via the logger.
  */
 public class ConsoleCommandSource implements CommandSource {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(ConsoleCommandSource.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger("Console");
     private static final ConsoleCommandSource INSTANCE = new ConsoleCommandSource();
 
-    private ConsoleCommandSource() {}
+    private ConsoleCommandSource() {
+    }
 
     public static ConsoleCommandSource getInstance() {
         return INSTANCE;
@@ -29,7 +31,7 @@ public class ConsoleCommandSource implements CommandSource {
 
     @Override
     public boolean hasPermission(@Nonnull String permission) {
-        // Console always has all permissions
+        // Console has all permissions
         return true;
     }
 

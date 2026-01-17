@@ -42,7 +42,7 @@ public class Bridge extends JavaPlugin {
 
         if (data  == null) {
             event.setCancelled(true);
-            event.setReason("cannot direct join numdrassl backend");
+            event.setReason("You have to go through our main proxy to join this server.");
             return;
         }
 
@@ -61,11 +61,8 @@ public class Bridge extends JavaPlugin {
 
             if (message == null) {
                 event.setCancelled(true);
-                event.setReason("Invalid player info message (is your proxy secret valid?)");
-                return;
+                event.setReason("Could not verify your player information. Make sure you are connecting through the correct proxy.");
             }
-
-            getLogger().at(Level.INFO).log("successfully authenticated player {} with hyproxy (remoteAddress={})", message.remoteAddress());
         } catch (Throwable throwable) {
             getLogger().at(Level.SEVERE).log("Error verifying player information: " + throwable.getMessage(), throwable);
             throwable.printStackTrace();
@@ -75,7 +72,7 @@ public class Bridge extends JavaPlugin {
     }
 
     private byte[] getProxySecret() {
-        byte[] proxySecret = System.getenv("HYPROXY_SECRET") != null ? System.getenv("HYPROXY_SECRET").getBytes(StandardCharsets.UTF_8) : null;
+        byte[] proxySecret = System.getenv("NUMDRASSL_SECRET") != null ? System.getenv("NUMDRASSL_SECRET").getBytes(StandardCharsets.UTF_8) : null;
 
         if (proxySecret == null) {
             String configProxySecret = config.get().getProxySecret();

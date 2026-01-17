@@ -5,16 +5,28 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Manages all active proxy sessions
+ * Thread-safe registry for managing active proxy sessions.
+ *
+ * <p>Provides multiple lookup strategies:</p>
+ * <ul>
+ *   <li>By session ID (always available)</li>
+ *   <li>By QUIC channel (for network event handling)</li>
+ *   <li>By player UUID (after authentication)</li>
+ * </ul>
+ *
+ * <p>All operations are thread-safe and suitable for concurrent access
+ * from multiple Netty event loop threads.</p>
  */
-public class SessionManager {
+public final class SessionManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SessionManager.class);
 
@@ -22,108 +34,209 @@ public class SessionManager {
     private final Map<QuicChannel, ProxySession> sessionsByChannel = new ConcurrentHashMap<>();
     private final Map<UUID, ProxySession> sessionsByUuid = new ConcurrentHashMap<>();
 
+    // ==================== Registration ====================
+
     /**
-     * Register a new session
+     * Registers a new session.
+     *
+     * @param session the session to register
      */
     public void addSession(@Nonnull ProxySession session) {
+        Objects.requireNonNull(session, "session");
+
         sessionsById.put(session.getSessionId(), session);
         sessionsByChannel.put(session.getClientChannel(), session);
+
         LOGGER.info("Session registered: {}", session.getSessionId());
     }
 
     /**
-     * Update session UUID mapping (called after backend connection is established)
-     * Only kicks existing session once the new session is fully connected to backend
-     */
-    public void registerPlayerUuid(@Nonnull ProxySession session, boolean kickExisting) {
-        UUID uuid = session.getPlayerUuid();
-        if (uuid != null) {
-            if (kickExisting) {
-                // Disconnect existing session with same UUID
-                ProxySession existing = sessionsByUuid.get(uuid);
-                if (existing != null && existing != session) {
-                    LOGGER.info("Disconnecting existing session for UUID: {}", uuid);
-                    existing.disconnect("Another connection with same account");
-                }
-            }
-            sessionsByUuid.put(uuid, session);
-        }
-    }
-
-    /**
-     * Update session UUID mapping (called after Connect packet, doesn't kick yet)
+     * Associates a player UUID with a session.
+     *
+     * <p>Called after the Connect packet is received but before full authentication.
+     * Does not kick existing sessions with the same UUID.</p>
+     *
+     * @param session the session to register
      */
     public void registerPlayerUuid(@Nonnull ProxySession session) {
         registerPlayerUuid(session, false);
     }
 
     /**
-     * Remove a session
+     * Associates a player UUID with a session, optionally kicking existing sessions.
+     *
+     * <p>When {@code kickExisting} is true, any existing session with the same UUID
+     * will be disconnected. This should only be done after the new session is fully
+     * authenticated and connected to a backend.</p>
+     *
+     * @param session the session to register
+     * @param kickExisting whether to disconnect existing sessions with the same UUID
+     */
+    public void registerPlayerUuid(@Nonnull ProxySession session, boolean kickExisting) {
+        Objects.requireNonNull(session, "session");
+
+        UUID uuid = session.getPlayerUuid();
+        if (uuid == null) {
+            return;
+        }
+
+        if (kickExisting) {
+            ProxySession existing = sessionsByUuid.get(uuid);
+            if (existing != null && existing != session) {
+                LOGGER.info("Disconnecting existing session {} for UUID: {}",
+                    existing.getSessionId(), uuid);
+                existing.disconnect("Another connection with same account");
+            }
+        }
+
+        sessionsByUuid.put(uuid, session);
+    }
+
+    // ==================== Removal ====================
+
+    /**
+     * Removes a session from all indexes.
+     *
+     * @param session the session to remove
      */
     public void removeSession(@Nonnull ProxySession session) {
+        Objects.requireNonNull(session, "session");
+
         sessionsById.remove(session.getSessionId());
         sessionsByChannel.remove(session.getClientChannel());
+
         UUID uuid = session.getPlayerUuid();
         if (uuid != null) {
+            // Only remove if it's still mapped to this session
             sessionsByUuid.remove(uuid, session);
         }
+
         LOGGER.info("Session removed: {}", session.getSessionId());
     }
 
+    // ==================== Lookup ====================
+
     /**
-     * Get session by ID
+     * Finds a session by its ID.
+     *
+     * @param sessionId the session ID
+     * @return the session, or empty if not found
      */
-    @Nullable
+    @Nonnull
+    public Optional<ProxySession> findById(long sessionId) {
+        return Optional.ofNullable(sessionsById.get(sessionId));
+    }
+
+    /**
+     * Finds a session by its QUIC channel.
+     *
+     * @param channel the QUIC channel
+     * @return the session, or empty if not found
+     */
+    @Nonnull
+    public Optional<ProxySession> findByChannel(@Nonnull QuicChannel channel) {
+        Objects.requireNonNull(channel, "channel");
+        return Optional.ofNullable(sessionsByChannel.get(channel));
+    }
+
+    /**
+     * Finds a session by player UUID.
+     *
+     * @param uuid the player UUID
+     * @return the session, or empty if not found
+     */
+    @Nonnull
+    public Optional<ProxySession> findByUuid(@Nonnull UUID uuid) {
+        Objects.requireNonNull(uuid, "uuid");
+        return Optional.ofNullable(sessionsByUuid.get(uuid));
+    }
+
+    // Legacy methods for backward compatibility
+
+    /**
+     * @deprecated Use {@link #findById(long)} instead
+     */
+    @Deprecated
     public ProxySession getSession(long sessionId) {
         return sessionsById.get(sessionId);
     }
 
     /**
-     * Get session by QUIC channel
+     * @deprecated Use {@link #findByChannel(QuicChannel)} instead
      */
-    @Nullable
+    @Deprecated
     public ProxySession getSession(@Nonnull QuicChannel channel) {
         return sessionsByChannel.get(channel);
     }
 
     /**
-     * Get session by player UUID
+     * @deprecated Use {@link #findByUuid(UUID)} instead
      */
-    @Nullable
+    @Deprecated
     public ProxySession getSession(@Nonnull UUID uuid) {
         return sessionsByUuid.get(uuid);
     }
 
+    // ==================== Bulk Operations ====================
+
     /**
-     * Get all active sessions
+     * Returns an unmodifiable view of all active sessions.
+     *
+     * @return collection of all sessions
      */
     @Nonnull
     public Collection<ProxySession> getAllSessions() {
-        return sessionsById.values();
+        return Collections.unmodifiableCollection(sessionsById.values());
     }
 
     /**
-     * Get the number of active sessions
+     * Returns the number of active sessions.
+     *
+     * @return session count
      */
     public int getSessionCount() {
         return sessionsById.size();
     }
 
     /**
-     * Close all sessions
+     * Checks if there are any active sessions.
+     *
+     * @return true if at least one session exists
+     */
+    public boolean hasActiveSessions() {
+        return !sessionsById.isEmpty();
+    }
+
+    // ==================== Lifecycle ====================
+
+    /**
+     * Closes all active sessions.
+     *
+     * <p>Called during proxy shutdown. Sessions are closed gracefully
+     * without sending disconnect reasons.</p>
      */
     public void closeAll() {
-        LOGGER.info("Closing all {} sessions", sessionsById.size());
-        for (ProxySession session : sessionsById.values()) {
-            try {
-                session.close();
-            } catch (Exception e) {
-                LOGGER.error("Error closing session {}", session.getSessionId(), e);
-            }
+        int count = sessionsById.size();
+        if (count == 0) {
+            return;
         }
+
+        LOGGER.info("Closing {} active session(s)", count);
+
+        for (ProxySession session : sessionsById.values()) {
+            closeSessionSafely(session);
+        }
+
         sessionsById.clear();
         sessionsByChannel.clear();
         sessionsByUuid.clear();
     }
-}
 
+    private void closeSessionSafely(ProxySession session) {
+        try {
+            session.close();
+        } catch (Exception e) {
+            LOGGER.error("Error closing session {}", session.getSessionId(), e);
+        }
+    }
+}

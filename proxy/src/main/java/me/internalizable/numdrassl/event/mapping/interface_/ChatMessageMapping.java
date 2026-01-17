@@ -4,19 +4,19 @@ import com.hypixel.hytale.protocol.packets.interface_.ChatMessage;
 import me.internalizable.numdrassl.api.event.Cancellable;
 import me.internalizable.numdrassl.api.event.player.PlayerChatEvent;
 import me.internalizable.numdrassl.api.event.player.PlayerCommandEvent;
-import me.internalizable.numdrassl.event.PacketContext;
-import me.internalizable.numdrassl.event.PacketEventMapping;
+import me.internalizable.numdrassl.event.mapping.PacketContext;
+import me.internalizable.numdrassl.event.mapping.PacketEventMapping;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.util.Objects;
 
 /**
  * Maps ChatMessage packet (client -> server) to PlayerChatEvent or PlayerCommandEvent.
- *
- * <p>Protocol: {@link com.hypixel.hytale.protocol.packets.interface_.ChatMessage}</p>
- * <p>Events: {@link PlayerChatEvent}, {@link PlayerCommandEvent}</p>
  */
-public class ChatMessageMapping implements PacketEventMapping<ChatMessage, Object> {
+public final class ChatMessageMapping implements PacketEventMapping<ChatMessage, Object> {
+
+    private static final String COMMAND_PREFIX = "/";
 
     @Override
     @Nonnull
@@ -33,8 +33,11 @@ public class ChatMessageMapping implements PacketEventMapping<ChatMessage, Objec
     @Override
     @Nullable
     public Object createEvent(@Nonnull PacketContext context, @Nonnull ChatMessage packet) {
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(packet, "packet");
+
         if (!context.isClientToServer()) {
-            return null; // Only handle client-to-server
+            return null;
         }
 
         String message = packet.message;
@@ -42,13 +45,9 @@ public class ChatMessageMapping implements PacketEventMapping<ChatMessage, Objec
             return null;
         }
 
-        if (message.startsWith("/")) {
-            // Command
-            return new PlayerCommandEvent(context.getPlayer(), message);
-        } else {
-            // Chat
-            return new PlayerChatEvent(context.getPlayer(), message);
-        }
+        return message.startsWith(COMMAND_PREFIX)
+            ? new PlayerCommandEvent(context.getPlayer(), message)
+            : new PlayerChatEvent(context.getPlayer(), message);
     }
 
     @Override
@@ -56,20 +55,17 @@ public class ChatMessageMapping implements PacketEventMapping<ChatMessage, Objec
     public ChatMessage applyChanges(@Nonnull PacketContext context,
                                      @Nonnull ChatMessage packet,
                                      @Nonnull Object event) {
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(packet, "packet");
+        Objects.requireNonNull(event, "event");
+
         if (event instanceof PlayerCommandEvent cmdEvent) {
-            // If handled by proxy, don't forward to server
             if (!cmdEvent.shouldForwardToServer()) {
                 return null;
             }
-            // Update message with potentially modified command
             packet.message = cmdEvent.getCommandLine();
-            return packet;
-        }
-
-        if (event instanceof PlayerChatEvent chatEvent) {
-            // Update message with potentially modified content
+        } else if (event instanceof PlayerChatEvent chatEvent) {
             packet.message = chatEvent.getMessage();
-            return packet;
         }
 
         return packet;
@@ -77,10 +73,7 @@ public class ChatMessageMapping implements PacketEventMapping<ChatMessage, Objec
 
     @Override
     public boolean isCancelled(@Nonnull Object event) {
-        if (event instanceof Cancellable cancellable) {
-            return cancellable.isCancelled();
-        }
-        return false;
+        Objects.requireNonNull(event, "event");
+        return event instanceof Cancellable cancellable && cancellable.isCancelled();
     }
 }
-

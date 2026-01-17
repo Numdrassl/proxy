@@ -81,6 +81,17 @@ public class NumdrasslCommandManager implements CommandManager {
         return Collections.unmodifiableSet(commands.keySet());
     }
 
+    /**
+     * Get a command by name.
+     *
+     * @param name the command name
+     * @return the command, or null if not found
+     */
+    public Command getCommand(@Nonnull String name) {
+        RegisteredCommand registered = commands.get(name.toLowerCase());
+        return registered != null ? registered.command : null;
+    }
+
     @Override
     @Nonnull
     public CommandResult execute(@Nonnull CommandSource source, @Nonnull String commandLine) {

@@ -2,22 +2,21 @@ package me.internalizable.numdrassl.event.mapping.connection;
 
 import com.hypixel.hytale.protocol.packets.connection.Disconnect;
 import me.internalizable.numdrassl.api.event.connection.DisconnectEvent;
-import me.internalizable.numdrassl.event.PacketContext;
-import me.internalizable.numdrassl.event.PacketEventMapping;
+import me.internalizable.numdrassl.event.mapping.PacketContext;
+import me.internalizable.numdrassl.event.mapping.PacketEventMapping;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.util.Objects;
 
 /**
- * Maps Disconnect packet to DisconnectEvent.
+ * Maps Disconnect packet (server -> client) to DisconnectEvent.
  *
- * <p>Protocol: {@link com.hypixel.hytale.protocol.packets.connection.Disconnect}</p>
- * <p>Event: {@link DisconnectEvent}</p>
- *
- * <p>Note: This handles server-to-client disconnect packets. Session close events
- * are handled separately by the session lifecycle.</p>
+ * <p>Note: Session close events are handled separately by session lifecycle.</p>
  */
-public class DisconnectMapping implements PacketEventMapping<Disconnect, DisconnectEvent> {
+public final class DisconnectMapping implements PacketEventMapping<Disconnect, DisconnectEvent> {
+
+    private static final String TIMEOUT_KEYWORD = "timeout";
 
     @Override
     @Nonnull
@@ -34,17 +33,22 @@ public class DisconnectMapping implements PacketEventMapping<Disconnect, Disconn
     @Override
     @Nullable
     public DisconnectEvent createEvent(@Nonnull PacketContext context, @Nonnull Disconnect packet) {
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(packet, "packet");
+
         if (!context.isServerToClient()) {
-            return null; // Only handle server-to-client disconnects
+            return null;
         }
 
-        // Determine reason from packet
-        DisconnectEvent.DisconnectReason reason = DisconnectEvent.DisconnectReason.KICKED;
-        if (packet.reason != null && packet.reason.toLowerCase().contains("timeout")) {
-            reason = DisconnectEvent.DisconnectReason.TIMEOUT;
-        }
-
+        DisconnectEvent.DisconnectReason reason = determineReason(packet);
         return new DisconnectEvent(context.getPlayer(), reason);
+    }
+
+    private DisconnectEvent.DisconnectReason determineReason(Disconnect packet) {
+        if (packet.reason != null && packet.reason.toLowerCase().contains(TIMEOUT_KEYWORD)) {
+            return DisconnectEvent.DisconnectReason.TIMEOUT;
+        }
+        return DisconnectEvent.DisconnectReason.KICKED;
     }
 
     @Override
@@ -52,13 +56,15 @@ public class DisconnectMapping implements PacketEventMapping<Disconnect, Disconn
     public Disconnect applyChanges(@Nonnull PacketContext context,
                                     @Nonnull Disconnect packet,
                                     @Nonnull DisconnectEvent event) {
-        // Disconnect events are informational, can't be modified
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(packet, "packet");
+        Objects.requireNonNull(event, "event");
         return packet;
     }
 
     @Override
     public boolean isCancelled(@Nonnull DisconnectEvent event) {
+        Objects.requireNonNull(event, "event");
         return false; // Disconnect events can't be cancelled
     }
 }
-
