@@ -35,10 +35,18 @@ jobs:
           ls -la api/build/libs/ || { echo "ERROR: api artifacts missing"; exit 1; }
           ls -la bridge/build/libs/ || { echo "ERROR: bridge artifacts missing"; exit 1; }
 
+      - name: Sanitize ref name for artifact
+        id: sanitize
+        run: |
+          # Replace invalid characters with dashes
+          SAFE_REF=$(echo "${{ github.ref_name }}" | sed 's/[\/\\:*?"<>|]/-/g')
+          echo "safe_ref=$SAFE_REF" >> $GITHUB_OUTPUT
+          echo "Sanitized ref: $SAFE_REF"
+
       - name: Upload proxy artifact
         uses: actions/upload-artifact@v4
         with:
-          name: proxy-${{ github.ref_name }}
+          name: proxy-${{ steps.sanitize.outputs.safe_ref }}
           path: proxy/build/libs/*.jar
           retention-days: 7
           if-no-files-found: error
@@ -46,7 +54,7 @@ jobs:
       - name: Upload API artifact
         uses: actions/upload-artifact@v4
         with:
-          name: api-${{ github.ref_name }}
+          name: api-${{ steps.sanitize.outputs.safe_ref }}
           path: |
             api/build/libs/*.jar
             !api/build/libs/*-javadoc.jar
@@ -57,7 +65,7 @@ jobs:
       - name: Upload bridge artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bridge-${{ github.ref_name }}
+          name: bridge-${{ steps.sanitize.outputs.safe_ref }}
           path: bridge/build/libs/*.jar
           retention-days: 7
           if-no-files-found: error
