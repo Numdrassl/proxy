@@ -1,9 +1,8 @@
 # Numdrassl - Hytale QUIC Proxy Server
 
-<!-- Update OWNER/REPO to match your GitHub repository path -->
-![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Numdrassl/Numdrassl?utm_source=oss&utm_medium=github&utm_campaign=Numdrassl%2FNumdrassl&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
-![Build Status](https://github.com/Numdrassl/Numdrassl/actions/workflows/build.yml/badge.svg)
-![Release](https://github.com/Numdrassl/Numdrassl/actions/workflows/release.yml/badge.svg)
+[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Numdrassl/proxy?utm_source=oss&utm_medium=github&utm_campaign=Numdrassl%2Fproxy&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)
+[![Build Status](https://github.com/Numdrassl/proxy/actions/workflows/build.yml/badge.svg)](https://github.com/Numdrassl/proxy/actions/workflows/build.yml)
+[![Release](https://github.com/Numdrassl/proxy/actions/workflows/release.yml/badge.svg)](https://github.com/Numdrassl/proxy/actions/workflows/release.yml)
 ![Java](https://img.shields.io/badge/Java-25-orange)
 ![License](https://img.shields.io/badge/License-Proprietary-red)
 
@@ -567,7 +566,7 @@ Enable `debugMode: true` in config for verbose packet logging.
 
 ## Documentation
 
-- [API JavaDocs](https://numdrassl.github.io/Numdrassl/) - Online API documentation
+- [API JavaDocs](https://numdrassl.github.io/proxy/) - Online API documentation
 - [Plugin Development Guide](docs/PLUGIN_DEVELOPMENT.md) - Complete plugin development reference
 - [Event Architecture](docs/EVENT_ARCHITECTURE.md) - Internal event system details
 - [Authentication Architecture](docs/AUTHENTICATION_ARCHITECTURE.md) - Auth flow documentation
