@@ -7,6 +7,8 @@
  *       Authentication management (login/logout)</li>
  *   <li>{@link me.internalizable.numdrassl.command.builtin.HelpCommand} -
  *       Lists available commands and usage</li>
+ *   <li>{@link me.internalizable.numdrassl.command.builtin.ServerCommand} -
+ *       Lists servers or transfers player to a server</li>
  *   <li>{@link me.internalizable.numdrassl.command.builtin.SessionsCommand} -
  *       Displays active player sessions</li>
  *   <li>{@link me.internalizable.numdrassl.command.builtin.StopCommand} -

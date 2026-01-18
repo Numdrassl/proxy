@@ -25,6 +25,7 @@ import me.internalizable.numdrassl.pipeline.codec.ProxyPacketDecoder;
 import me.internalizable.numdrassl.pipeline.codec.ProxyPacketEncoder;
 import me.internalizable.numdrassl.plugin.NumdrasslProxy;
 import me.internalizable.numdrassl.server.ssl.CertificateGenerator;
+import me.internalizable.numdrassl.server.transfer.PlayerTransfer;
 import me.internalizable.numdrassl.server.transfer.ReferralManager;
 import me.internalizable.numdrassl.session.ProxySession;
 import me.internalizable.numdrassl.session.SessionManager;
@@ -67,6 +68,7 @@ public final class ProxyCore {
     private final BackendConnector backendConnector;
     private final ProxyAuthenticator authenticator;
     private final ReferralManager referralManager;
+    private final PlayerTransfer playerTransfer;
 
     // Networking
     private EventLoopGroup eventLoopGroup;
@@ -86,6 +88,7 @@ public final class ProxyCore {
         this.eventManager = new PacketEventManager();
         this.backendConnector = new BackendConnector(this);
         this.referralManager = new ReferralManager(this);
+        this.playerTransfer = new PlayerTransfer(this);
         this.authenticator = createAuthenticator();
     }
 
@@ -302,7 +305,7 @@ public final class ProxyCore {
     private void shutdownApi() {
         if (apiProxy != null) {
             apiProxy.getNumdrasslEventManager().fireSync(new ProxyShutdownEvent());
-            apiProxy.shutdown();
+            apiProxy.shutdownApi();
         }
     }
 
@@ -350,6 +353,11 @@ public final class ProxyCore {
     @Nonnull
     public ReferralManager getReferralManager() {
         return referralManager;
+    }
+
+    @Nonnull
+    public PlayerTransfer getPlayerTransfer() {
+        return playerTransfer;
     }
 
     @Nullable

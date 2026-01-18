@@ -79,6 +79,9 @@ public final class SessionLifecycleHandler {
 
         Player player = createPlayer(session);
         if (player != null) {
+            // Remove player from their current server's player list
+            removePlayerFromCurrentServer(session, player);
+
             DisconnectEvent event = new DisconnectEvent(player, DisconnectEvent.DisconnectReason.DISCONNECTED);
             eventManager.fireSync(event);
         }
@@ -167,16 +170,47 @@ public final class SessionLifecycleHandler {
         Player player = createPlayer(session);
         RegisteredServer server = resolveServerFromSession(session);
 
+        LOGGER.debug("Session {}: onServerConnected - player={}, server={}, serverName={}",
+            session.getSessionId(),
+            player != null ? player.getUsername() : "null",
+            server != null ? server.getName() : "null",
+            session.getCurrentServerName());
+
         if (player != null && server != null) {
             RegisteredServer previousServer = previousSession != null
                 ? resolveServerFromSession(previousSession)
                 : null;
+
+            // Remove from previous server
+            if (previousServer instanceof NumdrasslRegisteredServer prevNumdrasslServer) {
+                prevNumdrasslServer.removePlayer(player);
+                LOGGER.debug("Session {}: Removed player from previous server {}",
+                    session.getSessionId(), previousServer.getName());
+            }
+
+            // Add to new server
+            if (server instanceof NumdrasslRegisteredServer numdrasslServer) {
+                numdrasslServer.addPlayer(player);
+                LOGGER.debug("Session {}: Added player to server {}, playerCount now {}",
+                    session.getSessionId(), server.getName(), numdrasslServer.getPlayerCount());
+            }
+
             ServerConnectedEvent event = new ServerConnectedEvent(player, server, previousServer);
             eventManager.fireSync(event);
         }
     }
 
     // ==================== Helper Methods ====================
+
+    /**
+     * Removes a player from their current server's player list.
+     */
+    private void removePlayerFromCurrentServer(ProxySession session, Player player) {
+        RegisteredServer currentServer = resolveServerFromSession(session);
+        if (currentServer instanceof NumdrasslRegisteredServer numdrasslServer) {
+            numdrasslServer.removePlayer(player);
+        }
+    }
 
     @Nullable
     private Player createPlayer(ProxySession session) {

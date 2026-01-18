@@ -13,8 +13,6 @@
  *       pending transfers and routes reconnecting players to their target backend.</li>
  *   <li>{@link me.internalizable.numdrassl.server.transfer.PendingReferral} - Immutable
  *       record representing a pending transfer with expiration tracking.</li>
- *   <li>{@link me.internalizable.numdrassl.server.transfer.TransferResult} - Immutable
- *       record representing the outcome of a transfer attempt.</li>
  * </ul>
  *
  * <h2>Transfer Flow</h2>

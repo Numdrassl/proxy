@@ -97,6 +97,11 @@ public final class PacketSender {
         if (stream.eventLoop().inEventLoop()) {
             doWrite(stream, message, target);
         } else {
+            // Retain ByteBuf when crossing event loops to prevent premature release
+            // The encoder will release it after writing
+            if (message instanceof ByteBuf buf) {
+                buf.retain();
+            }
             stream.eventLoop().execute(() -> {
                 if (stream.isActive()) {
                     doWrite(stream, message, target);

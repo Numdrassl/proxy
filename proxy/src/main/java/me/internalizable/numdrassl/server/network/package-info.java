@@ -6,7 +6,7 @@
  *
  * <h2>Key Classes</h2>
  * <ul>
- *   <li>{@link me.internalizable.numdrassl.server.network.ChatMessageBuilder} - Fluent builder
+ *   <li>{@link me.internalizable.numdrassl.api.chat.ChatMessageBuilder} - Fluent builder
  *       for constructing Hytale {@code FormattedMessage} objects with colors and styling.
  *       Simplifies the verbose message construction API.</li>
  * </ul>
@@ -22,7 +22,7 @@
  * session.sendToClient(message);
  * }</pre>
  *
- * @see me.internalizable.numdrassl.server.network.ChatMessageBuilder
+ * @see me.internalizable.numdrassl.api.chat.ChatMessageBuilder
  */
 package me.internalizable.numdrassl.server.network;
 

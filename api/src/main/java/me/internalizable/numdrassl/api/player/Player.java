@@ -1,5 +1,7 @@
 package me.internalizable.numdrassl.api.player;
 
+import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
+import me.internalizable.numdrassl.api.permission.PermissionSubject;
 import me.internalizable.numdrassl.api.server.RegisteredServer;
 
 import javax.annotation.Nonnull;
@@ -11,8 +13,11 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * Represents a player connected to the proxy.
+ *
+ * <p>Players are permission subjects and can be checked for permissions
+ * using {@link #hasPermission(String)} or {@link #getPermissionValue(String)}.</p>
  */
-public interface Player {
+public interface Player extends PermissionSubject {
 
     /**
      * Get the player's UUID.
@@ -80,6 +85,20 @@ public interface Player {
      * @param message the message to send
      */
     void sendMessage(@Nonnull String message);
+
+    /**
+     * Send a formatted chat message to the player.
+     *
+     * <p>Example usage:</p>
+     * <pre>{@code
+     * player.sendMessage(ChatMessageBuilder.create()
+     *     .green("[Success] ")
+     *     .white("Operation completed!"));
+     * }</pre>
+     *
+     * @param builder the ChatMessageBuilder with the formatted message
+     */
+    void sendMessage(@Nonnull ChatMessageBuilder builder);
 
     /**
      * Disconnect the player with a reason.

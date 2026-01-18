@@ -2,6 +2,7 @@ package me.internalizable.numdrassl.server.transfer;
 
 import com.hypixel.hytale.protocol.HostAddress;
 import com.hypixel.hytale.protocol.packets.auth.ClientReferral;
+import me.internalizable.numdrassl.api.player.TransferResult;
 import me.internalizable.numdrassl.config.BackendServer;
 import me.internalizable.numdrassl.server.ProxyCore;
 import me.internalizable.numdrassl.session.ProxySession;

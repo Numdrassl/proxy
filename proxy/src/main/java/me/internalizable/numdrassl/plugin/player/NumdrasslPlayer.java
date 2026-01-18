@@ -1,6 +1,9 @@
 package me.internalizable.numdrassl.plugin.player;
 
 import com.hypixel.hytale.protocol.Packet;
+import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
+import me.internalizable.numdrassl.api.permission.PermissionFunction;
+import me.internalizable.numdrassl.api.permission.Tristate;
 import me.internalizable.numdrassl.api.player.Player;
 import me.internalizable.numdrassl.api.player.TransferResult;
 import me.internalizable.numdrassl.api.server.RegisteredServer;
@@ -14,6 +17,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Implementation of the {@link Player} API interface.
@@ -28,10 +32,15 @@ public final class NumdrasslPlayer implements Player {
 
     private final ProxySession session;
     private final NumdrasslProxy proxy;
+    private final AtomicReference<PermissionFunction> permissionFunction;
 
     public NumdrasslPlayer(@Nonnull ProxySession session, @Nonnull NumdrasslProxy proxy) {
         this.session = Objects.requireNonNull(session, "session");
         this.proxy = Objects.requireNonNull(proxy, "proxy");
+        // Initialize permission function from the manager
+        this.permissionFunction = new AtomicReference<>(
+            proxy.getPermissionManager().createFunction(this)
+        );
     }
 
     // ==================== Identity ====================
@@ -110,6 +119,12 @@ public final class NumdrasslPlayer implements Player {
         session.sendChatMessage(message);
     }
 
+    @Override
+    public void sendMessage(@Nonnull ChatMessageBuilder builder) {
+        Objects.requireNonNull(builder, "builder");
+        session.sendChatMessage(builder);
+    }
+
     // ==================== Connection Management ====================
 
     @Override
@@ -123,17 +138,18 @@ public final class NumdrasslPlayer implements Player {
     public CompletableFuture<TransferResult> transfer(@Nonnull RegisteredServer server) {
         Objects.requireNonNull(server, "server");
 
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                InetSocketAddress address = server.getAddress();
-                boolean success = session.transferTo(address.getHostString(), address.getPort());
-                return success
-                    ? TransferResult.success()
-                    : TransferResult.failure("Transfer failed");
-            } catch (Exception e) {
-                return TransferResult.failure(e.getMessage());
-            }
-        });
+        // Find the backend server config
+        var config = proxy.getCore().getConfig();
+        var backend = config.getBackendByName(server.getName());
+
+        if (backend == null) {
+            return CompletableFuture.completedFuture(
+                TransferResult.failure("Backend server not found: " + server.getName())
+            );
+        }
+
+        // Use PlayerTransfer which sends ClientReferral
+        return proxy.getCore().getPlayerTransfer().transfer(session, backend);
     }
 
     @Override
@@ -141,11 +157,34 @@ public final class NumdrasslPlayer implements Player {
     public CompletableFuture<TransferResult> transfer(@Nonnull String serverName) {
         Objects.requireNonNull(serverName, "serverName");
 
-        return proxy.getServer(serverName)
-            .map(this::transfer)
-            .orElseGet(() -> CompletableFuture.completedFuture(
-                TransferResult.failure("Server not found: " + serverName)
-            ));
+        // Use PlayerTransfer which sends ClientReferral
+        return proxy.getCore().getPlayerTransfer().transfer(session, serverName);
+    }
+
+    // ==================== Permissions ====================
+
+    @Override
+    @Nonnull
+    public Tristate getPermissionValue(@Nonnull String permission) {
+        Objects.requireNonNull(permission, "permission");
+        return permissionFunction.get().getPermissionValue(permission);
+    }
+
+    @Override
+    public boolean hasPermission(@Nonnull String permission) {
+        return getPermissionValue(permission).asBoolean();
+    }
+
+    @Override
+    @Nonnull
+    public PermissionFunction getPermissionFunction() {
+        return permissionFunction.get();
+    }
+
+    @Override
+    public void setPermissionFunction(@Nonnull PermissionFunction function) {
+        Objects.requireNonNull(function, "function");
+        permissionFunction.set(function);
     }
 
     // ==================== Internal Access ====================

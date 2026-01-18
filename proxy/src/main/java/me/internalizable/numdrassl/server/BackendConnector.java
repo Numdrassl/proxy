@@ -20,7 +20,7 @@ import me.internalizable.numdrassl.config.BackendServer;
 import me.internalizable.numdrassl.pipeline.BackendPacketHandler;
 import me.internalizable.numdrassl.pipeline.codec.ProxyPacketDecoder;
 import me.internalizable.numdrassl.pipeline.codec.ProxyPacketEncoder;
-import me.internalizable.numdrassl.server.network.ChatMessageBuilder;
+import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
 import me.internalizable.numdrassl.session.ProxySession;
 import me.internalizable.numdrassl.session.SessionState;
 import org.slf4j.Logger;
@@ -383,12 +383,11 @@ public final class BackendConnector {
     // ==================== Transfer Messages ====================
 
     private void sendTransferSuccessMessage(ProxySession session, String serverName) {
-        session.sendToClient(
+        session.sendChatMessage(
             ChatMessageBuilder.create()
                 .gold("Connecting to ")
                 .bold(serverName, ChatMessageBuilder.Colors.GREEN)
                 .gold("...")
-                .buildServerMessage()
         );
     }
 
@@ -397,12 +396,11 @@ public final class BackendConnector {
             session.setState(SessionState.CONNECTED);
         }
 
-        session.sendToClient(
+        session.sendChatMessage(
             ChatMessageBuilder.create()
                 .red("Failed to connect to ")
                 .bold(serverName, ChatMessageBuilder.Colors.GOLD)
                 .red(". Please try again later.")
-                .buildServerMessage()
         );
     }
 

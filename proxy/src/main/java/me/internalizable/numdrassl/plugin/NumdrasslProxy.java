@@ -4,6 +4,7 @@ import me.internalizable.numdrassl.api.Numdrassl;
 import me.internalizable.numdrassl.api.ProxyServer;
 import me.internalizable.numdrassl.api.command.CommandManager;
 import me.internalizable.numdrassl.api.event.EventManager;
+import me.internalizable.numdrassl.api.permission.PermissionManager;
 import me.internalizable.numdrassl.api.player.Player;
 import me.internalizable.numdrassl.api.plugin.PluginManager;
 import me.internalizable.numdrassl.api.scheduler.Scheduler;
@@ -12,11 +13,14 @@ import me.internalizable.numdrassl.command.CommandEventListener;
 import me.internalizable.numdrassl.command.NumdrasslCommandManager;
 import me.internalizable.numdrassl.command.builtin.AuthCommand;
 import me.internalizable.numdrassl.command.builtin.HelpCommand;
+import me.internalizable.numdrassl.command.builtin.NumdrasslCommand;
+import me.internalizable.numdrassl.command.builtin.ServerCommand;
 import me.internalizable.numdrassl.command.builtin.SessionsCommand;
 import me.internalizable.numdrassl.command.builtin.StopCommand;
 import me.internalizable.numdrassl.event.api.NumdrasslEventManager;
 import me.internalizable.numdrassl.plugin.bridge.ApiEventBridge;
 import me.internalizable.numdrassl.plugin.loader.NumdrasslPluginManager;
+import me.internalizable.numdrassl.plugin.permission.NumdrasslPermissionManager;
 import me.internalizable.numdrassl.plugin.player.NumdrasslPlayer;
 import me.internalizable.numdrassl.plugin.server.NumdrasslRegisteredServer;
 import me.internalizable.numdrassl.scheduler.NumdrasslScheduler;
@@ -54,6 +58,7 @@ public final class NumdrasslProxy implements ProxyServer {
     private final NumdrasslCommandManager commandManager;
     private final NumdrasslPluginManager pluginManager;
     private final NumdrasslScheduler scheduler;
+    private final NumdrasslPermissionManager permissionManager;
     private final ApiEventBridge eventBridge;
 
     // Server registry
@@ -70,6 +75,7 @@ public final class NumdrasslProxy implements ProxyServer {
         this.eventManager = new NumdrasslEventManager();
         this.commandManager = new NumdrasslCommandManager();
         this.scheduler = new NumdrasslScheduler();
+        this.permissionManager = new NumdrasslPermissionManager();
         this.dataDirectory = Paths.get("data");
         this.configDirectory = Paths.get("config");
         this.pluginManager = new NumdrasslPluginManager(this, Paths.get("plugins"));
@@ -109,6 +115,8 @@ public final class NumdrasslProxy implements ProxyServer {
         commandManager.register(this, new AuthCommand(core));
         commandManager.register(this, new SessionsCommand(core));
         commandManager.register(this, new StopCommand(core), "shutdown", "end");
+        commandManager.register(this, new ServerCommand(), "srv");
+        commandManager.register(this, new NumdrasslCommand(), "nd", "proxy");
     }
 
     private void registerCommandListener() {
@@ -126,7 +134,7 @@ public final class NumdrasslProxy implements ProxyServer {
      * Shuts down the API layer without stopping the core.
      * Called by {@link ProxyCore} during shutdown sequence.
      */
-    public void shutdown() {
+    public void shutdownApi() {
         pluginManager.disablePlugins();
         scheduler.shutdown();
         eventManager.shutdown();
@@ -156,6 +164,12 @@ public final class NumdrasslProxy implements ProxyServer {
     @Nonnull
     public Scheduler getScheduler() {
         return scheduler;
+    }
+
+    @Override
+    @Nonnull
+    public PermissionManager getPermissionManager() {
+        return permissionManager;
     }
 
     // ==================== Player Management ====================
@@ -263,6 +277,11 @@ public final class NumdrasslProxy implements ProxyServer {
     @Override
     public boolean isRunning() {
         return core.isRunning();
+    }
+
+    @Override
+    public void shutdown() {
+        core.stop();
     }
 
     @Override

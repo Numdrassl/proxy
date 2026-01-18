@@ -2,13 +2,14 @@ package me.internalizable.numdrassl.session;
 
 import com.hypixel.hytale.protocol.Packet;
 import com.hypixel.hytale.protocol.packets.connection.Connect;
-import com.hypixel.hytale.protocol.packets.interface_.ChatMessage;
 import io.netty.buffer.ByteBuf;
 import io.netty.incubator.codec.quic.QuicChannel;
 import io.netty.incubator.codec.quic.QuicStreamChannel;
+import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
 import me.internalizable.numdrassl.auth.CertificateExtractor;
 import me.internalizable.numdrassl.config.BackendServer;
 import me.internalizable.numdrassl.server.ProxyCore;
+import me.internalizable.numdrassl.server.network.ChatMessageConverter;
 import me.internalizable.numdrassl.session.auth.SessionAuthState;
 import me.internalizable.numdrassl.session.channel.PacketSender;
 import me.internalizable.numdrassl.session.channel.SessionChannels;
@@ -336,11 +337,30 @@ public final class ProxySession {
     }
 
     /**
-     * Sends a chat message to the player.
+     * Sends a plain text chat message to the player.
+     *
+     * @param message the message to send
      */
     public void sendChatMessage(@Nonnull String message) {
         Objects.requireNonNull(message, "message");
-        sendToClient(new ChatMessage(message));
+        sendChatMessage(ChatMessageBuilder.create().white(message));
+    }
+
+    /**
+     * Sends a formatted chat message to the player.
+     *
+     * <p>Example usage:</p>
+     * <pre>{@code
+     * session.sendChatMessage(ChatMessageBuilder.create()
+     *     .green("Success: ")
+     *     .white("You have been teleported!"));
+     * }</pre>
+     *
+     * @param builder the ChatMessageBuilder with the formatted message
+     */
+    public void sendChatMessage(@Nonnull ChatMessageBuilder builder) {
+        Objects.requireNonNull(builder, "builder");
+        sendToClient(ChatMessageConverter.toServerMessage(builder));
     }
 
     // ==================== Lifecycle ====================

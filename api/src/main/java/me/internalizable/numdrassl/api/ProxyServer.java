@@ -2,6 +2,7 @@ package me.internalizable.numdrassl.api;
 
 import me.internalizable.numdrassl.api.command.CommandManager;
 import me.internalizable.numdrassl.api.event.EventManager;
+import me.internalizable.numdrassl.api.permission.PermissionManager;
 import me.internalizable.numdrassl.api.player.Player;
 import me.internalizable.numdrassl.api.plugin.PluginManager;
 import me.internalizable.numdrassl.api.scheduler.Scheduler;
@@ -73,6 +74,17 @@ public interface ProxyServer {
      */
     @Nonnull
     Scheduler getScheduler();
+
+    /**
+     * Get the permission manager for managing permissions.
+     *
+     * <p>The permission manager allows external permission plugins (like LuckPerms)
+     * to register their permission providers.</p>
+     *
+     * @return the permission manager
+     */
+    @Nonnull
+    PermissionManager getPermissionManager();
 
     /**
      * Get all currently connected players.

@@ -5,9 +5,13 @@ import me.internalizable.numdrassl.api.command.CommandSource;
 import me.internalizable.numdrassl.api.event.EventPriority;
 import me.internalizable.numdrassl.api.event.Subscribe;
 import me.internalizable.numdrassl.api.event.player.PlayerCommandEvent;
+import me.internalizable.numdrassl.api.permission.PermissionFunction;
+import me.internalizable.numdrassl.api.permission.Tristate;
 import me.internalizable.numdrassl.api.player.Player;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.annotation.Nonnull;
 
 /**
  * Listens for PlayerCommandEvent and executes proxy commands.
@@ -64,6 +68,7 @@ public class CommandEventListener {
 
     /**
      * Command source implementation for players.
+     * Delegates permission checks to the player's permission function.
      */
     private static class PlayerCommandSource implements CommandSource {
         private final Player player;
@@ -73,17 +78,34 @@ public class CommandEventListener {
         }
 
         @Override
-        public void sendMessage(String message) {
+        public void sendMessage(@Nonnull String message) {
             player.sendMessage(message);
         }
 
         @Override
-        public boolean hasPermission(String permission) {
-            // TODO: Implement permission system
-            return true;
+        @Nonnull
+        public Tristate getPermissionValue(@Nonnull String permission) {
+            return player.getPermissionValue(permission);
         }
 
         @Override
+        public boolean hasPermission(@Nonnull String permission) {
+            return player.hasPermission(permission);
+        }
+
+        @Override
+        @Nonnull
+        public PermissionFunction getPermissionFunction() {
+            return player.getPermissionFunction();
+        }
+
+        @Override
+        public void setPermissionFunction(@Nonnull PermissionFunction function) {
+            player.setPermissionFunction(function);
+        }
+
+        @Override
+        @Nonnull
         public java.util.Optional<Player> asPlayer() {
             return java.util.Optional.of(player);
         }

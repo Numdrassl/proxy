@@ -50,15 +50,14 @@ public final class ProxyPacketEncoder extends MessageToByteEncoder<Object> {
     }
 
     private void encodeRawPacket(ByteBuf raw, ByteBuf out) {
-        try {
-            int packetId = extractPacketId(raw);
-            out.writeBytes(raw);
+        int packetId = extractPacketId(raw);
 
-            if (debugMode) {
-                LOGGER.debug("[{}] Forwarding raw packet id={}", connectionType, packetId);
-            }
-        } finally {
-            raw.release();
+        // Simply copy bytes to output - DO NOT release raw buffer here
+        // MessageToByteEncoder handles releasing the input message
+        out.writeBytes(raw);
+
+        if (debugMode) {
+            LOGGER.debug("[{}] Forwarding raw packet id={}", connectionType, packetId);
         }
     }
 
