@@ -1,4 +1,6 @@
-package me.internalizable.numdrassl.api.messaging;
+package me.internalizable.numdrassl.api.messaging.annotation;
+
+import me.internalizable.numdrassl.api.messaging.MessagingService;
 
 import javax.annotation.Nonnull;
 

@@ -1,6 +1,11 @@
-package me.internalizable.numdrassl.messaging;
+package me.internalizable.numdrassl.messaging.local;
 
 import me.internalizable.numdrassl.api.messaging.*;
+import me.internalizable.numdrassl.api.messaging.annotation.TypeAdapter;
+import me.internalizable.numdrassl.api.messaging.channel.Channels;
+import me.internalizable.numdrassl.api.messaging.channel.MessageChannel;
+import me.internalizable.numdrassl.api.messaging.handler.MessageHandler;
+import me.internalizable.numdrassl.api.messaging.handler.PluginMessageHandler;
 import me.internalizable.numdrassl.messaging.subscription.LocalSubscription;
 import me.internalizable.numdrassl.messaging.subscription.SubscriptionEntry;
 import org.slf4j.Logger;

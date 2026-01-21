@@ -1,6 +1,12 @@
-package me.internalizable.numdrassl.messaging;
+package me.internalizable.numdrassl.messaging.processing;
 
 import me.internalizable.numdrassl.api.messaging.*;
+import me.internalizable.numdrassl.api.messaging.annotation.MessageSubscribe;
+import me.internalizable.numdrassl.api.messaging.channel.MessageChannel;
+import me.internalizable.numdrassl.api.messaging.channel.SystemChannel;
+import me.internalizable.numdrassl.api.messaging.handler.MessageHandler;
+import me.internalizable.numdrassl.api.messaging.handler.PluginMessageHandler;
+import me.internalizable.numdrassl.messaging.codec.MessageCodec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -10,7 +16,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 
 /**
- * Processes {@link Subscribe} annotations on methods to create subscriptions.
+ * Processes {@link MessageSubscribe} annotations on methods to create subscriptions.
  *
  * <p>Handles both plugin message subscriptions and system channel subscriptions.</p>
  */
@@ -39,11 +45,11 @@ public final class SubscribeMethodProcessor {
     }
 
     /**
-     * Process a method annotated with @Subscribe and create a subscription.
+     * Process a method annotated with @MessageSubscribe and create a subscription.
      *
      * @param listener the listener object
      * @param method the annotated method
-     * @param annotation the Subscribe annotation
+     * @param annotation the MessageSubscribe annotation
      * @param explicitPluginId optional plugin ID override
      * @return the created subscription
      * @throws IllegalArgumentException if the method signature is invalid
@@ -52,12 +58,12 @@ public final class SubscribeMethodProcessor {
     public Subscription process(
             @Nonnull Object listener,
             @Nonnull Method method,
-            @Nonnull Subscribe annotation,
+            @Nonnull MessageSubscribe annotation,
             @Nullable String explicitPluginId) {
 
         Parameter[] params = method.getParameters();
         if (params.length == 0 || params.length > 2) {
-            throw new IllegalArgumentException("@Subscribe method must have 1 or 2 parameters");
+            throw new IllegalArgumentException("@MessageSubscribe method must have 1 or 2 parameters");
         }
 
         method.setAccessible(true);
@@ -67,12 +73,12 @@ public final class SubscribeMethodProcessor {
 
         if (!isPluginSubscription && !isSystemSubscription) {
             throw new IllegalArgumentException(
-                    "@Subscribe must specify either channel (for plugin messages) or a SystemChannel value");
+                    "@MessageSubscribe must specify either channel (for plugin messages) or a SystemChannel value");
         }
 
         if (isPluginSubscription && isSystemSubscription) {
             throw new IllegalArgumentException(
-                    "@Subscribe cannot specify both channel and SystemChannel");
+                    "@MessageSubscribe cannot specify both channel and SystemChannel");
         }
 
         if (isPluginSubscription) {
@@ -84,13 +90,13 @@ public final class SubscribeMethodProcessor {
 
     @SuppressWarnings("unchecked")
     private Subscription processPluginSubscription(
-            Object listener, Method method, Subscribe annotation,
+            Object listener, Method method, MessageSubscribe annotation,
             Parameter[] params, String explicitPluginId) {
 
         String pluginId = explicitPluginId != null ? explicitPluginId : PluginIdExtractor.fromListener(listener);
         if (pluginId == null) {
             throw new IllegalArgumentException(
-                    "@Subscribe with channel requires the listener class to have @Plugin annotation, " +
+                    "@MessageSubscribe with channel requires the listener class to have @Plugin annotation, " +
                     "or use registerListener(listener, plugin)");
         }
 
@@ -104,7 +110,7 @@ public final class SubscribeMethodProcessor {
             dataType = params[0].getType();
         } else {
             throw new IllegalArgumentException(
-                    "@Subscribe plugin method signature must be (DataType) or (String, DataType)");
+                    "@MessageSubscribe plugin method signature must be (DataType) or (String, DataType)");
         }
 
         final boolean finalHasSourceProxy = hasSourceProxy;
@@ -118,7 +124,7 @@ public final class SubscribeMethodProcessor {
                     method.invoke(listener, data);
                 }
             } catch (Exception e) {
-                LOGGER.error("Error invoking @Subscribe method {}.{}: {}",
+                LOGGER.error("Error invoking @MessageSubscribe method {}.{}: {}",
                         listener.getClass().getSimpleName(), method.getName(), e.getMessage(), e);
             }
         };
@@ -128,8 +134,9 @@ public final class SubscribeMethodProcessor {
                 (Class<Object>) finalDataType, handler, annotation.includeSelf());
     }
 
+    @SuppressWarnings("unchecked")
     private Subscription processSystemSubscription(
-            Object listener, Method method, Subscribe annotation, Parameter[] params) {
+            Object listener, Method method, MessageSubscribe annotation, Parameter[] params) {
 
         MessageChannel channel = annotation.value().toMessageChannel();
         if (channel == null) {
@@ -138,10 +145,11 @@ public final class SubscribeMethodProcessor {
 
         if (params.length != 1 || !ChannelMessage.class.isAssignableFrom(params[0].getType())) {
             throw new IllegalArgumentException(
-                    "@Subscribe SystemChannel method must have exactly one ChannelMessage parameter");
+                    "@MessageSubscribe SystemChannel method must have exactly one ChannelMessage parameter");
         }
 
-        Class<?> messageType = params[0].getType();
+        Class<? extends ChannelMessage> messageType =
+                (Class<? extends ChannelMessage>) params[0].getType();
 
         MessageHandler<ChannelMessage> handler = (ch, message) -> {
             if (!messageType.isInstance(message)) {
@@ -150,12 +158,12 @@ public final class SubscribeMethodProcessor {
             try {
                 method.invoke(listener, message);
             } catch (Exception e) {
-                LOGGER.error("Error invoking @Subscribe method {}.{}: {}",
+                LOGGER.error("Error invoking @MessageSubscribe method {}.{}: {}",
                         listener.getClass().getSimpleName(), method.getName(), e.getMessage(), e);
             }
         };
 
-        return subscriptionFactory.subscribe(channel, handler, null, annotation.includeSelf());
+        return subscriptionFactory.subscribe(channel, handler, messageType, annotation.includeSelf());
     }
 
     /**

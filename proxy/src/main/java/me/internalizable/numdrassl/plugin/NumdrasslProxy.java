@@ -21,8 +21,8 @@ import me.internalizable.numdrassl.command.builtin.ServerCommand;
 import me.internalizable.numdrassl.command.builtin.SessionsCommand;
 import me.internalizable.numdrassl.command.builtin.StopCommand;
 import me.internalizable.numdrassl.event.api.NumdrasslEventManager;
-import me.internalizable.numdrassl.messaging.LocalMessagingService;
-import me.internalizable.numdrassl.messaging.RedisMessagingService;
+import me.internalizable.numdrassl.messaging.local.LocalMessagingService;
+import me.internalizable.numdrassl.messaging.redis.RedisMessagingService;
 import me.internalizable.numdrassl.plugin.bridge.ApiEventBridge;
 import me.internalizable.numdrassl.plugin.loader.NumdrasslPluginManager;
 import me.internalizable.numdrassl.plugin.permission.NumdrasslPermissionManager;
@@ -127,7 +127,7 @@ public final class NumdrasslProxy implements ProxyServer {
 
         if (config.isClusterEnabled()) {
             try {
-                this.messagingService = new RedisMessagingService(
+                this.messagingService = RedisMessagingService.create(
                         clusterManager.getLocalProxyId(),
                         config
                 );
@@ -136,9 +136,13 @@ public final class NumdrasslProxy implements ProxyServer {
             } catch (Exception e) {
                 LOGGER.error("Failed to connect to Redis, falling back to local mode", e);
                 this.messagingService = new LocalMessagingService(clusterManager.getLocalProxyId());
+                // Initialize cluster manager with local service to maintain consistent state
+                clusterManager.initializeLocalMode(messagingService, eventManager);
+                LOGGER.warn("Cluster manager running in degraded local-only mode");
             }
         } else {
             this.messagingService = new LocalMessagingService(clusterManager.getLocalProxyId());
+            clusterManager.initializeLocalMode(messagingService, eventManager);
             LOGGER.info("Running in standalone mode (cluster disabled)");
         }
     }

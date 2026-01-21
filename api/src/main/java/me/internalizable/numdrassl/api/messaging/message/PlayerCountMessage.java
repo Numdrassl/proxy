@@ -37,6 +37,20 @@ public record PlayerCountMessage(
         int maxPlayers
 ) implements ChannelMessage {
 
+    /**
+     *
+     *
+     * Validates that player counts are non-negative and within capacity.
+     */
+    public PlayerCountMessage {
+        if (playerCount < 0 || maxPlayers < 0) {
+            throw new IllegalArgumentException("playerCount and maxPlayers must be non-negative");
+        }
+        if (playerCount > maxPlayers) {
+            throw new IllegalArgumentException("playerCount cannot exceed maxPlayers");
+        }
+    }
+
     @Override
     @Nonnull
     public String messageType() {

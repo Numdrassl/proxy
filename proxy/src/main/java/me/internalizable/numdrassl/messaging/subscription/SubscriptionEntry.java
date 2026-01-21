@@ -1,8 +1,8 @@
 package me.internalizable.numdrassl.messaging.subscription;
 
 import me.internalizable.numdrassl.api.messaging.ChannelMessage;
-import me.internalizable.numdrassl.api.messaging.MessageChannel;
-import me.internalizable.numdrassl.api.messaging.MessageHandler;
+import me.internalizable.numdrassl.api.messaging.channel.MessageChannel;
+import me.internalizable.numdrassl.api.messaging.handler.MessageHandler;
 
 /**
  * Internal data structure holding subscription metadata.

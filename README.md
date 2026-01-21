@@ -30,6 +30,8 @@ A BungeeCord/Velocity-style proxy server for Hytale, built using Netty QUIC. All
 
 ## Architecture
 
+### Single Proxy Mode
+
 ```
 ┌─────────────┐     QUIC/TLS      ┌─────────────┐     QUIC/TLS      ┌─────────────────┐
 │   Hytale    │ ───────────────── │  Numdrassl  │ ───────────────── │ Backend Server  │
@@ -51,6 +53,39 @@ A BungeeCord/Velocity-style proxy server for Hytale, built using Netty QUIC. All
        │ <─────────────────────────────> │ <───────────────────────────────>│
 ```
 
+### Cluster Mode (Multi-Proxy)
+
+```
+                                    ┌─────────────────┐
+                                    │      Redis      │
+                                    │  (Pub/Sub Hub)  │
+                                    └────────┬────────┘
+                                             │
+            ┌────────────────────────────────┼────────────────────────────────┐
+            │                                │                                │
+            ▼                                ▼                                ▼
+   ┌─────────────────┐              ┌─────────────────┐              ┌─────────────────┐
+   │  Proxy EU-1     │              │  Proxy US-1     │              │  Proxy AS-1     │
+   │  (eu-west)      │◄────────────►│  (us-east)      │◄────────────►│  (ap-southeast) │
+   └────────┬────────┘              └────────┬────────┘              └────────┬────────┘
+            │                                │                                │
+    ┌───────┴───────┐               ┌───────┴───────┐               ┌───────┴───────┐
+    │               │               │               │               │               │
+    ▼               ▼               ▼               ▼               ▼               ▼
+┌───────┐       ┌───────┐       ┌───────┐       ┌───────┐       ┌───────┐       ┌───────┐
+│Lobby  │       │Game1  │       │Lobby  │       │Game2  │       │Lobby  │       │Game3  │
+│Server │       │Server │       │Server │       │Server │       │Server │       │Server │
+└───────┘       └───────┘       └───────┘       └───────┘       └───────┘       └───────┘
+
+Cross-Proxy Communication:
+  • Heartbeats: Proxy liveness monitoring
+  • Chat: Global chat messages
+  • Broadcasts: Server-wide announcements
+  • Player Count: Synchronized player counts
+  • Transfers: Cross-proxy player transfers
+  • Plugin Messages: Custom plugin data
+```
+
 ### Authentication Flow
 
 1. **Client → Proxy**: Player connects with Hytale identity token
@@ -70,6 +105,10 @@ A BungeeCord/Velocity-style proxy server for Hytale, built using Netty QUIC. All
 - **Plugin System**: Create plugins with event listeners and commands
 - **Secret-Based Auth**: Secure proxy-to-backend authentication (no JWT forwarding needed)
 - **OAuth Device Flow**: Authenticate proxy with Hytale account
+- **Cluster Mode**: Multi-proxy deployments with Redis-backed pub/sub
+- **Cross-Proxy Messaging**: Real-time communication between proxy instances
+- **Global Player Management**: Track players across all proxies in the cluster
+- **Permissions System**: Built-in permission management with provider support
 
 ---
 
@@ -83,7 +122,15 @@ Numdrassl/
 │           ├── Numdrassl.java          # Main entry point
 │           ├── ProxyServer.java        # Server interface
 │           ├── command/                # Command system
-│           ├── event/                  # Event system
+│           ├── event/                  # Event system (@Subscribe)
+│           ├── messaging/              # Cross-proxy messaging
+│           │   ├── MessagingService.java
+│           │   ├── Subscription.java
+│           │   ├── ChannelMessage.java
+│           │   ├── annotation/         # @MessageSubscribe, @TypeAdapter
+│           │   ├── channel/            # MessageChannel, Channels, SystemChannel
+│           │   ├── handler/            # MessageHandler, PluginMessageHandler
+│           │   └── message/            # Message types (Chat, Heartbeat, etc.)
 │           ├── player/                 # Player API
 │           ├── plugin/                 # Plugin annotations
 │           ├── scheduler/              # Task scheduler
@@ -98,9 +145,18 @@ Numdrassl/
 │       └── me/internalizable/numdrassl/
 │           ├── Main.java               # Entry point
 │           ├── auth/                   # OAuth & session management
+│           ├── cluster/                # Cluster management
+│           │   ├── ClusterManager.java
+│           │   ├── ProxyRegistry.java
+│           │   └── handler/            # Message handlers
 │           ├── command/                # Command handling
 │           ├── config/                 # Configuration
 │           ├── event/                  # Event dispatching
+│           ├── messaging/              # Messaging implementation
+│           │   ├── redis/              # Redis pub/sub
+│           │   ├── local/              # Local (non-cluster) messaging
+│           │   ├── codec/              # JSON serialization
+│           │   └── subscription/       # Subscription management
 │           ├── pipeline/               # Netty handlers
 │           ├── plugin/                 # Plugin loading
 │           ├── server/                 # Backend connections
@@ -249,11 +305,25 @@ proxyRegion: "eu-west"
 - **Cross-Proxy Chat**: Send messages to players on other proxies
 - **Proxy Discovery**: Track which proxies are online via heartbeats
 - **Load Balancing**: `clusterManager.getLeastLoadedProxy("eu-west")` for routing
+- **Cross-Proxy Messaging**: Pub/sub messaging via Redis
 
-**Events:**
+**System Channels (Built-in):**
+| Channel | Purpose |
+|---------|---------|
+| `HEARTBEAT` | Proxy liveness monitoring |
+| `CHAT` | Cross-proxy chat messages |
+| `BROADCAST` | Server-wide announcements |
+| `PLAYER_COUNT` | Player count synchronization |
+| `TRANSFER` | Cross-proxy player transfers |
+| `PLUGIN` | Plugin-specific messages |
+
+**Cluster Events:**
 - `ProxyJoinClusterEvent` - A new proxy joined the cluster
 - `ProxyLeaveClusterEvent` - A proxy left (graceful or timeout)
-- `CrossProxyMessageEvent` - Plugin-defined cross-proxy messages
+
+**Important Annotations:**
+- `@Subscribe` (from `api.event`) - For local proxy events (player joins, commands, etc.)
+- `@MessageSubscribe` (from `api.messaging.annotation`) - For cross-proxy messages
 
 ---
 
@@ -446,6 +516,8 @@ if (player != null) {
 
 ### Available Events
 
+Events use the `@Subscribe` annotation from `me.internalizable.numdrassl.api.event`.
+
 | Event | Description |
 |-------|-------------|
 | `ProxyInitializeEvent` | Proxy has started |
@@ -460,7 +532,19 @@ if (player != null) {
 | `ServerDisconnectEvent` | Player disconnected from backend |
 | `ProxyJoinClusterEvent` | A proxy joined the cluster (cluster mode) |
 | `ProxyLeaveClusterEvent` | A proxy left the cluster (cluster mode) |
-| `CrossProxyMessageEvent` | Plugin message from another proxy (cluster mode) |
+
+### Cross-Proxy Messaging
+
+Cross-proxy messages use the `@MessageSubscribe` annotation from `me.internalizable.numdrassl.api.messaging.annotation`.
+
+| System Channel | Message Type | Description |
+|----------------|--------------|-------------|
+| `HEARTBEAT` | `HeartbeatMessage` | Proxy liveness pings |
+| `CHAT` | `ChatMessage` | Cross-proxy chat |
+| `BROADCAST` | `BroadcastMessage` | Server-wide announcements |
+| `PLAYER_COUNT` | `PlayerCountMessage` | Player count updates |
+| `TRANSFER` | `TransferMessage` | Cross-proxy transfers |
+| `PLUGIN` | `PluginMessage` | Custom plugin messages |
 
 ### Installing Plugins
 
@@ -518,16 +602,65 @@ if (cluster.isClusterMode()) {
 
 ### MessagingService
 
+The messaging service enables cross-proxy communication via Redis pub/sub.
+
+**Important:** For cross-proxy messaging, use `@MessageSubscribe` (from `api.messaging.annotation`).  
+For local proxy events, use `@Subscribe` (from `api.event`).
+
 ```java
-// Subscribe to cross-proxy messages
-messaging.subscribe(MessageChannel.CHAT, ChatMessage.class, (channel, msg) -> {
+import me.internalizable.numdrassl.api.messaging.MessagingService;
+import me.internalizable.numdrassl.api.messaging.channel.Channels;
+import me.internalizable.numdrassl.api.messaging.message.ChatMessage;
+import me.internalizable.numdrassl.api.messaging.message.BroadcastMessage;
+import me.internalizable.numdrassl.api.messaging.channel.BroadcastType;
+
+MessagingService messaging = proxy.getMessagingService();
+
+// Subscribe to cross-proxy chat messages
+messaging.subscribe(Channels.CHAT, ChatMessage.class, (channel, msg) -> {
     logger.info("Chat from proxy {}: {}", msg.sourceProxyId(), msg.message());
 });
 
-// Send message to all proxies
-messaging.publish(MessageChannel.BROADCAST, new BroadcastMessage(
+// Send broadcast to all proxies
+messaging.publish(Channels.BROADCAST, new BroadcastMessage(
     proxyId, Instant.now(), "Server restarting in 5 minutes!", BroadcastType.WARNING
 ));
+
+// Plugin-specific messages
+messaging.subscribePlugin("my-plugin", "scores", ScoreData.class, (sourceProxyId, data) -> {
+    logger.info("Score update from {}: {}", sourceProxyId, data);
+});
+
+messaging.publishPlugin("my-plugin", "scores", new ScoreData("Steve", 100));
+```
+
+#### Annotation-Based Messaging
+
+```java
+import me.internalizable.numdrassl.api.messaging.annotation.MessageSubscribe;
+import me.internalizable.numdrassl.api.messaging.channel.SystemChannel;
+
+@Plugin(id = "my-plugin", name = "My Plugin", version = "1.0.0")
+public class MyPlugin {
+
+    // Plugin channel subscription - plugin ID inferred from @Plugin
+    @MessageSubscribe(channel = "scores")
+    public void onScoreUpdate(ScoreData data) {
+        logger.info("Score: {} - {}", data.playerName(), data.score());
+    }
+
+    // System channel subscription
+    @MessageSubscribe(SystemChannel.CHAT)
+    public void onCrossProxyChat(ChatMessage msg) {
+        logger.info("Chat from {}: {}", msg.sourceProxyId(), msg.message());
+    }
+
+    // Include messages from self
+    @MessageSubscribe(value = SystemChannel.HEARTBEAT, includeSelf = true)
+    public void onHeartbeat(HeartbeatMessage msg) {
+        logger.info("Proxy {} is alive", msg.sourceProxyId());
+    }
+}
 ```
 
 ### Player
@@ -638,6 +771,7 @@ Enable `debugMode: true` in config for verbose packet logging.
 - [API JavaDocs](https://numdrassl.github.io/proxy/) - Online API documentation
 - [Plugin Development Guide](docs/PLUGIN_DEVELOPMENT.md) - Complete plugin development reference
 - [Event Architecture](docs/EVENT_ARCHITECTURE.md) - Internal event system details
+- [Cluster & Messaging](docs/CLUSTER_MESSAGING_ARCHITECTURE.md) - Multi-proxy cluster and Redis messaging
 - [Authentication Architecture](docs/AUTHENTICATION_ARCHITECTURE.md) - Auth flow documentation
 
 ---

@@ -1,4 +1,4 @@
-package me.internalizable.numdrassl.api.messaging;
+package me.internalizable.numdrassl.api.messaging.channel;
 
 import me.internalizable.numdrassl.api.messaging.message.*;
 
@@ -10,14 +10,14 @@ import javax.annotation.Nonnull;
  * <p>These channels are built into Numdrassl and are used for core functionality.
  * Plugins can subscribe to these channels to receive system-level messages.</p>
  *
- * <h2>Usage with @Subscribe</h2>
+ * <h2>Usage with @MessageSubscribe</h2>
  * <pre>{@code
- * @Subscribe(SystemChannel.HEARTBEAT)
+ * @MessageSubscribe(SystemChannel.HEARTBEAT)
  * public void onHeartbeat(HeartbeatMessage msg) {
  *     logger.info("Proxy {} is alive", msg.sourceProxyId());
  * }
  *
- * @Subscribe(SystemChannel.CHAT)
+ * @MessageSubscribe(SystemChannel.CHAT)
  * public void onChat(ChatMessage msg) {
  *     if (msg.isBroadcast()) {
  *         broadcastToAll(msg.message());
@@ -25,7 +25,7 @@ import javax.annotation.Nonnull;
  * }
  * }</pre>
  *
- * @see Subscribe
+ * @see me.internalizable.numdrassl.api.messaging.annotation.MessageSubscribe
  * @see Channels
  */
 public enum SystemChannel {

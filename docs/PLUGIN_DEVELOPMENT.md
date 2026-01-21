@@ -149,6 +149,12 @@ public class MyPlugin {
 
 The event system allows plugins to react to proxy events and modify behavior.
 
+> **Important Annotation Distinction:**
+> - `@Subscribe` (from `api.event`) - For local proxy events (player joins, commands, etc.)
+> - `@MessageSubscribe` (from `api.messaging.annotation`) - For cross-proxy Redis messages
+>
+> This section covers `@Subscribe` for local events. See [Cluster Messaging](#cross-proxy-messaging) for `@MessageSubscribe`.
+
 ### Listening for Events
 
 Use the `@Subscribe` annotation on methods:
@@ -657,6 +663,111 @@ public void onPreConnect(ServerPreConnectEvent event) {
     // Your logic here
 }
 ```
+
+---
+
+## Cross-Proxy Messaging
+
+When running in cluster mode (multiple proxies with Redis), you can send messages between proxies.
+
+> **Note:** Use `@MessageSubscribe` from `api.messaging.annotation` for cross-proxy messages.
+> This is different from `@Subscribe` which is for local events.
+
+### Programmatic API
+
+```java
+import me.internalizable.numdrassl.api.messaging.MessagingService;
+import me.internalizable.numdrassl.api.messaging.channel.Channels;
+import me.internalizable.numdrassl.api.messaging.message.BroadcastMessage;
+import me.internalizable.numdrassl.api.messaging.channel.BroadcastType;
+
+// Get the messaging service
+MessagingService messaging = Numdrassl.getProxy().getMessagingService();
+
+// Subscribe to cross-proxy chat
+messaging.subscribe(Channels.CHAT, ChatMessage.class, (channel, msg) -> {
+    logger.info("Chat from {}: {}", msg.sourceProxyId(), msg.message());
+});
+
+// Send a broadcast to all proxies
+messaging.publish(Channels.BROADCAST, new BroadcastMessage(
+    proxyId, Instant.now(), "Server restart in 5 minutes", BroadcastType.WARNING
+));
+
+// Plugin-specific messages
+messaging.subscribePlugin("my-plugin", "events", MyEventData.class,
+    (sourceProxyId, data) -> handleEvent(data));
+
+messaging.publishPlugin("my-plugin", "events", new MyEventData("something happened"));
+```
+
+### Annotation-Based API
+
+```java
+import me.internalizable.numdrassl.api.messaging.annotation.MessageSubscribe;
+import me.internalizable.numdrassl.api.messaging.channel.SystemChannel;
+import me.internalizable.numdrassl.api.messaging.message.ChatMessage;
+
+@Plugin(id = "my-plugin", name = "My Plugin", version = "1.0.0")
+public class MyPlugin {
+
+    @Subscribe  // Local event
+    public void onInit(ProxyInitializeEvent event) {
+        // Register this class for @MessageSubscribe methods
+        Numdrassl.getProxy().getMessagingService().registerListener(this);
+    }
+
+    // Cross-proxy chat (from other proxies)
+    @MessageSubscribe(SystemChannel.CHAT)
+    public void onCrossProxyChat(ChatMessage msg) {
+        logger.info("Chat from proxy {}: {}", msg.sourceProxyId(), msg.message());
+    }
+
+    // Custom plugin channel - plugin ID inferred from @Plugin annotation
+    @MessageSubscribe(channel = "game-events")
+    public void onGameEvent(GameEventData data) {
+        logger.info("Game event: {}", data);
+    }
+
+    // Include messages from this proxy too
+    @MessageSubscribe(value = SystemChannel.HEARTBEAT, includeSelf = true)
+    public void onAnyHeartbeat(HeartbeatMessage msg) {
+        logger.info("Proxy {} is alive with {} players", 
+            msg.sourceProxyId(), msg.playerCount());
+    }
+}
+```
+
+### Custom Message Types
+
+Define your own message types for plugin-specific communication:
+
+```java
+// Your custom data class
+public record ScoreUpdate(String playerName, int score, String gameMode) {}
+
+// Publishing
+messaging.publishPlugin("my-plugin", "scores", new ScoreUpdate("Steve", 100, "survival"));
+
+// Subscribing
+@MessageSubscribe(channel = "scores")
+public void onScoreUpdate(ScoreUpdate update) {
+    logger.info("{} scored {} in {}", 
+        update.playerName(), update.score(), update.gameMode());
+}
+```
+
+### System Channels
+
+| Channel | Message Type | Purpose |
+|---------|--------------|---------|
+| `SystemChannel.HEARTBEAT` | `HeartbeatMessage` | Proxy liveness |
+| `SystemChannel.CHAT` | `ChatMessage` | Cross-proxy chat |
+| `SystemChannel.BROADCAST` | `BroadcastMessage` | Announcements |
+| `SystemChannel.PLAYER_COUNT` | `PlayerCountMessage` | Player sync |
+| `SystemChannel.TRANSFER` | `TransferMessage` | Cross-proxy transfers |
+
+For more details, see [Cluster Messaging Architecture](CLUSTER_MESSAGING_ARCHITECTURE.md).
 
 ---
 

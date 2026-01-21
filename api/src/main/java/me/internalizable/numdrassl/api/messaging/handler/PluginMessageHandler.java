@@ -1,11 +1,12 @@
-package me.internalizable.numdrassl.api.messaging;
+package me.internalizable.numdrassl.api.messaging.handler;
 
 import javax.annotation.Nonnull;
 
 /**
  * Handler for typed plugin messages received from other proxy instances.
  *
- * <p>This functional interface is used with {@link MessagingService#subscribePlugin}
+ * <p>This functional interface is used with
+ * {@link me.internalizable.numdrassl.api.messaging.MessagingService#subscribePlugin}
  * to receive custom plugin data with automatic deserialization.</p>
  *
  * <h2>Example</h2>
@@ -24,7 +25,7 @@ import javax.annotation.Nonnull;
  * }</pre>
  *
  * @param <T> the custom data type
- * @see MessagingService#subscribePlugin(String, String, Class, PluginMessageHandler)
+ * @see me.internalizable.numdrassl.api.messaging.MessagingService#subscribePlugin(String, String, Class, PluginMessageHandler)
  */
 @FunctionalInterface
 public interface PluginMessageHandler<T> {

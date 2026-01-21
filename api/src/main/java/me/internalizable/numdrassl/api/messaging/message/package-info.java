@@ -19,7 +19,7 @@
  * over Redis pub/sub.</p>
  *
  * @see me.internalizable.numdrassl.api.messaging.ChannelMessage
- * @see me.internalizable.numdrassl.api.messaging.SystemChannel
+ * @see me.internalizable.numdrassl.api.messaging.channel.SystemChannel
  */
 package me.internalizable.numdrassl.api.messaging.message;
 

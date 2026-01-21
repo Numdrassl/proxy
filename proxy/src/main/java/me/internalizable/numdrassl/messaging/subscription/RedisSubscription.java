@@ -1,6 +1,6 @@
 package me.internalizable.numdrassl.messaging.subscription;
 
-import me.internalizable.numdrassl.api.messaging.MessageChannel;
+import me.internalizable.numdrassl.api.messaging.channel.MessageChannel;
 import me.internalizable.numdrassl.api.messaging.Subscription;
 
 import javax.annotation.Nonnull;

@@ -4,7 +4,7 @@ import me.internalizable.numdrassl.api.cluster.ProxyInfo;
 import me.internalizable.numdrassl.api.event.cluster.ProxyJoinClusterEvent;
 import me.internalizable.numdrassl.api.event.cluster.ProxyLeaveClusterEvent;
 import me.internalizable.numdrassl.api.event.cluster.ProxyLeaveClusterEvent.LeaveReason;
-import me.internalizable.numdrassl.api.messaging.Channels;
+import me.internalizable.numdrassl.api.messaging.channel.Channels;
 import me.internalizable.numdrassl.api.messaging.MessagingService;
 import me.internalizable.numdrassl.api.messaging.Subscription;
 import me.internalizable.numdrassl.api.messaging.message.HeartbeatMessage;
@@ -16,6 +16,7 @@ import javax.annotation.Nonnull;
 import java.net.InetSocketAddress;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,6 +35,10 @@ public final class ProxyRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger(ProxyRegistry.class);
     private static final long HEARTBEAT_TIMEOUT_MS = 30_000; // 30 seconds
     private static final long CLEANUP_INTERVAL_MS = 10_000; // 10 seconds
+
+    // TODO: Add maxPlayers to HeartbeatMessage so each proxy can report its actual capacity
+    // See: https://github.com/Numdrassl/proxy/issues/XXX
+    private static final int DEFAULT_MAX_PLAYERS = 1000;
 
     private final Map<String, ProxyInfo> proxies = new ConcurrentHashMap<>();
     private final MessagingService messagingService;
@@ -98,11 +103,14 @@ public final class ProxyRegistry {
     /**
      * Get all online proxies.
      *
-     * @return collection of proxy info
+     * <p>Returns a snapshot of the current proxy list. The returned collection
+     * is a copy and will not reflect subsequent changes to the registry.</p>
+     *
+     * @return immutable snapshot of proxy info
      */
     @Nonnull
     public Collection<ProxyInfo> getOnlineProxies() {
-        return proxies.values();
+        return List.copyOf(proxies.values());
     }
 
     /**
@@ -159,27 +167,30 @@ public final class ProxyRegistry {
             return;
         }
 
-        // Check if this is a new proxy
-        boolean isNew = !proxies.containsKey(proxyId);
+        // Track whether this is a new proxy for event firing
+        final boolean[] isNew = {false};
 
-        // Update or add proxy info
-        ProxyInfo info = new ProxyInfo(
-                proxyId,
-                heartbeat.region(),
-                new InetSocketAddress(heartbeat.host(), heartbeat.port()),
-                heartbeat.playerCount(),
-                1000, // Max players - could be included in heartbeat
-                heartbeat.uptimeMillis(),
-                Instant.now(),
-                version
-        );
+        // Atomic update-and-check to prevent race conditions with concurrent heartbeats
+        proxies.compute(proxyId, (id, existing) -> {
+            isNew[0] = (existing == null);
+            return new ProxyInfo(
+                    proxyId,
+                    heartbeat.region(),
+                    new InetSocketAddress(heartbeat.host(), heartbeat.port()),
+                    heartbeat.playerCount(),
+                    DEFAULT_MAX_PLAYERS,
+                    heartbeat.uptimeMillis(),
+                    Instant.now(),
+                    version
+            );
+        });
 
-        proxies.put(proxyId, info);
-
-        if (isNew && !proxyId.equals(localProxyId)) {
+        // Fire join event only for genuinely new proxies (not self)
+        if (isNew[0] && !proxyId.equals(localProxyId)) {
+            ProxyInfo newProxy = proxies.get(proxyId);
             LOGGER.info("Proxy {} joined cluster (region: {}, players: {})",
                     proxyId, heartbeat.region(), heartbeat.playerCount());
-            eventManager.fire(new ProxyJoinClusterEvent(info));
+            eventManager.fire(new ProxyJoinClusterEvent(newProxy));
         }
     }
 

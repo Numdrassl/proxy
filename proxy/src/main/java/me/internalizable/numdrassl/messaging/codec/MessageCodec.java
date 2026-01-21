@@ -1,4 +1,4 @@
-package me.internalizable.numdrassl.messaging;
+package me.internalizable.numdrassl.messaging.codec;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -11,7 +11,7 @@ import com.google.gson.JsonPrimitive;
 import com.google.gson.JsonSerializationContext;
 import com.google.gson.JsonSerializer;
 import me.internalizable.numdrassl.api.messaging.ChannelMessage;
-import me.internalizable.numdrassl.api.messaging.TypeAdapter;
+import me.internalizable.numdrassl.api.messaging.annotation.TypeAdapter;
 import me.internalizable.numdrassl.api.messaging.message.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,8 +46,7 @@ public final class MessageCodec {
     private Gson buildGson() {
         GsonBuilder builder = new GsonBuilder()
                 .registerTypeAdapter(Instant.class, new InstantAdapter())
-                .registerTypeAdapter(UUID.class, new UuidAdapter())
-                .registerTypeAdapter(ChannelMessage.class, new ChannelMessageAdapter());
+                .registerTypeAdapter(UUID.class, new UuidAdapter());
 
         // Register custom adapters as Gson type adapters
         for (Map.Entry<Class<?>, TypeAdapter<?>> entry : customAdapters.entrySet()) {
@@ -65,7 +64,7 @@ public final class MessageCodec {
      */
     public <T> void registerTypeAdapter(@Nonnull TypeAdapter<T> adapter) {
         customAdapters.put(adapter.getType(), adapter);
-        this.gson = buildGson(); // Rebuild Gson with new adapter
+        this.gson = buildGson();
         LOGGER.debug("Registered type adapter for {}", adapter.getType().getSimpleName());
     }
 
@@ -76,7 +75,7 @@ public final class MessageCodec {
      */
     public void unregisterTypeAdapter(@Nonnull Class<?> type) {
         if (customAdapters.remove(type) != null) {
-            this.gson = buildGson(); // Rebuild Gson without the adapter
+            this.gson = buildGson();
             LOGGER.debug("Unregistered type adapter for {}", type.getSimpleName());
         }
     }
@@ -170,7 +169,9 @@ public final class MessageCodec {
     /**
      * Adapter for java.time.Instant serialization.
      */
-    private static class InstantAdapter implements JsonSerializer<Instant>, JsonDeserializer<Instant> {
+    private static final class InstantAdapter
+            implements JsonSerializer<Instant>, JsonDeserializer<Instant> {
+
         @Override
         public JsonElement serialize(Instant src, Type typeOfSrc, JsonSerializationContext context) {
             return new JsonPrimitive(src.toEpochMilli());
@@ -185,7 +186,9 @@ public final class MessageCodec {
     /**
      * Adapter for UUID serialization.
      */
-    private static class UuidAdapter implements JsonSerializer<UUID>, JsonDeserializer<UUID> {
+    private static final class UuidAdapter
+            implements JsonSerializer<UUID>, JsonDeserializer<UUID> {
+
         @Override
         public JsonElement serialize(UUID src, Type typeOfSrc, JsonSerializationContext context) {
             return new JsonPrimitive(src.toString());
@@ -198,21 +201,11 @@ public final class MessageCodec {
     }
 
     /**
-     * Adapter for polymorphic ChannelMessage deserialization.
-     */
-    private static class ChannelMessageAdapter implements JsonDeserializer<ChannelMessage> {
-        @Override
-        public ChannelMessage deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) {
-            // This is only used when deserializing a bare ChannelMessage reference
-            // In practice, we handle the type dispatch in decode() above
-            throw new UnsupportedOperationException("Use MessageCodec.decode() for ChannelMessage deserialization");
-        }
-    }
-
-    /**
      * Wraps our TypeAdapter interface to work with Gson's type adapter system.
      */
-    private static class GsonTypeAdapterWrapper<T> implements JsonSerializer<T>, JsonDeserializer<T> {
+    private static final class GsonTypeAdapterWrapper<T>
+            implements JsonSerializer<T>, JsonDeserializer<T> {
+
         private final TypeAdapter<T> adapter;
         private final Gson internalGson = new Gson();
 

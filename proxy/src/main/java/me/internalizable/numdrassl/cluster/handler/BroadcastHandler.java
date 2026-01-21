@@ -1,6 +1,7 @@
 package me.internalizable.numdrassl.cluster.handler;
 
-import me.internalizable.numdrassl.api.messaging.Channels;
+import me.internalizable.numdrassl.api.messaging.channel.BroadcastType;
+import me.internalizable.numdrassl.api.messaging.channel.Channels;
 import me.internalizable.numdrassl.api.messaging.MessagingService;
 import me.internalizable.numdrassl.api.messaging.Subscription;
 import me.internalizable.numdrassl.api.messaging.message.BroadcastMessage;
@@ -64,29 +65,50 @@ public final class BroadcastHandler {
     /**
      * Send a broadcast to all proxies (including local).
      *
-     * @param type the broadcast type (e.g., "announcement", "alert")
+     * @param type the broadcast type
      * @param content the broadcast content
      * @return future that completes when published
      */
-    public CompletableFuture<Void> broadcast(@Nonnull String type, @Nonnull String content) {
+    public CompletableFuture<Void> broadcast(@Nonnull BroadcastType type, @Nonnull String content) {
         BroadcastMessage message = new BroadcastMessage(
                 localProxyId,
                 Instant.now(),
-                type,
+                type.getId(),
                 content
         );
         return messagingService.publish(Channels.BROADCAST, message);
+    }
+
+    /**
+     * Send a broadcast to all proxies (including local).
+     *
+     * @param type the broadcast type as string (for backward compatibility)
+     * @param content the broadcast content
+     * @return future that completes when published
+     * @deprecated Use {@link #broadcast(BroadcastType, String)} instead
+     */
+    @Deprecated
+    public CompletableFuture<Void> broadcast(@Nonnull String type, @Nonnull String content) {
+        BroadcastType broadcastType = BroadcastType.fromId(type, BroadcastType.CUSTOM);
+        return broadcast(broadcastType, content);
     }
 
     private void handleBroadcast(BroadcastMessage message) {
         LOGGER.debug("Received broadcast from {}: [{}] {}",
                 message.sourceProxyId(), message.broadcastType(), message.content());
 
-        switch (message.broadcastType()) {
-            case "announcement" -> deliverToAllPlayers(message.content());
-            case "alert" -> deliverAlert(message.content());
-            case "maintenance" -> handleMaintenance(message.content());
-            default -> LOGGER.debug("Unhandled broadcast type: {}", message.broadcastType());
+        BroadcastType type = BroadcastType.fromId(message.broadcastType());
+
+        if (type == null) {
+            LOGGER.debug("Unknown broadcast type: {}", message.broadcastType());
+            return;
+        }
+
+        switch (type) {
+            case ANNOUNCEMENT -> deliverToAllPlayers(message.content());
+            case ALERT -> deliverAlert(message.content());
+            case MAINTENANCE -> handleMaintenance(message.content());
+            case CUSTOM -> LOGGER.debug("Custom broadcast received: {}", message.content());
         }
     }
 

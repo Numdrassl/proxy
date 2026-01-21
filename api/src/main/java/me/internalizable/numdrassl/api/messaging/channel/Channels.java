@@ -1,4 +1,4 @@
-package me.internalizable.numdrassl.api.messaging;
+package me.internalizable.numdrassl.api.messaging.channel;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -191,8 +191,8 @@ public final class Channels {
     // ==================== Internal ====================
 
     private static MessageChannel registerSystem(String name) {
-        String id = "numdrassl:" + name;
-        MessageChannel channel = new SimpleMessageChannel("numdrassl", name);
+        String id = MessageChannel.SYSTEM_NAMESPACE + ":" + name;
+        MessageChannel channel = new SimpleMessageChannel(MessageChannel.SYSTEM_NAMESPACE, name);
         REGISTRY.put(id, channel);
         return channel;
     }

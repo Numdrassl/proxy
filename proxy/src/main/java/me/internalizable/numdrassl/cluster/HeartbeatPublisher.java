@@ -1,6 +1,6 @@
 package me.internalizable.numdrassl.cluster;
 
-import me.internalizable.numdrassl.api.messaging.Channels;
+import me.internalizable.numdrassl.api.messaging.channel.Channels;
 import me.internalizable.numdrassl.api.messaging.MessagingService;
 import me.internalizable.numdrassl.api.messaging.message.HeartbeatMessage;
 import org.slf4j.Logger;

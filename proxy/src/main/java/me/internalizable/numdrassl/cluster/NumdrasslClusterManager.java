@@ -34,6 +34,7 @@ public final class NumdrasslClusterManager implements ClusterManager {
     private final InetSocketAddress publicAddress;
     private final SessionManager sessionManager;
     private final boolean clusterMode;
+    private final int maxPlayers;
 
     private ProxyRegistry registry;
     private HeartbeatPublisher heartbeatPublisher;
@@ -46,9 +47,10 @@ public final class NumdrasslClusterManager implements ClusterManager {
         this.publicAddress = resolvePublicAddress(config);
         this.sessionManager = sessionManager;
         this.clusterMode = config.isClusterEnabled();
+        this.maxPlayers = config.getMaxConnections();
 
-        LOGGER.info("Cluster manager initialized: id={}, region={}, clusterMode={}",
-                proxyId, region, clusterMode);
+        LOGGER.info("Cluster manager initialized: id={}, region={}, clusterMode={}, maxPlayers={}",
+                proxyId, region, clusterMode, maxPlayers);
     }
 
     /**
@@ -62,6 +64,7 @@ public final class NumdrasslClusterManager implements ClusterManager {
             @Nonnull NumdrasslEventManager eventManager) {
         if (!clusterMode) {
             LOGGER.info("Cluster mode disabled, skipping cluster initialization");
+            initializeLocalMode(messagingService, eventManager);
             return;
         }
 
@@ -83,15 +86,45 @@ public final class NumdrasslClusterManager implements ClusterManager {
     }
 
     /**
+     * Initialize in local-only mode (no Redis connectivity).
+     *
+     * <p>This is used when:</p>
+     * <ul>
+     *   <li>Cluster mode is disabled in config</li>
+     *   <li>Redis connection failed and we're falling back</li>
+     * </ul>
+     *
+     * <p>Ensures {@link #isClusterMode()} returns false and all cluster
+     * methods operate in single-proxy mode.</p>
+     *
+     * @param messagingService the local messaging service
+     * @param eventManager the event manager
+     */
+    public void initializeLocalMode(
+            @Nonnull MessagingService messagingService,
+            @Nonnull NumdrasslEventManager eventManager) {
+        // Explicitly null out cluster components to ensure isClusterMode() returns false
+        this.registry = null;
+        this.heartbeatPublisher = null;
+        LOGGER.debug("Cluster manager initialized in local-only mode");
+    }
+
+    /**
      * Shutdown cluster services.
+     *
+     * <p>After shutdown, {@link #isClusterMode()} will return false
+     * to prevent operations on stopped services.</p>
      */
     public void shutdown() {
         if (heartbeatPublisher != null) {
             heartbeatPublisher.stop();
+            heartbeatPublisher = null;
         }
         if (registry != null) {
             registry.stop();
+            registry = null;
         }
+        LOGGER.info("Cluster manager shutdown complete");
     }
 
     @Override
@@ -119,7 +152,7 @@ public final class NumdrasslClusterManager implements ClusterManager {
                 region,
                 publicAddress,
                 sessionManager.getSessionCount(),
-                1000, // Max players - could be configurable
+                maxPlayers,
                 System.currentTimeMillis(),
                 Instant.now(),
                 VERSION

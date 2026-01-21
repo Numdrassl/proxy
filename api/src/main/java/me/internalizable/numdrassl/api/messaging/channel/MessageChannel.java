@@ -1,4 +1,6 @@
-package me.internalizable.numdrassl.api.messaging;
+package me.internalizable.numdrassl.api.messaging.channel;
+
+import me.internalizable.numdrassl.api.messaging.MessagingService;
 
 import javax.annotation.Nonnull;
 
@@ -22,6 +24,11 @@ import javax.annotation.Nonnull;
  * @see MessagingService for pub/sub operations
  */
 public interface MessageChannel {
+
+    /**
+     * The namespace used for all system channels.
+     */
+    String SYSTEM_NAMESPACE = "numdrassl";
 
     /**
      * Get the unique channel identifier.
@@ -55,7 +62,7 @@ public interface MessageChannel {
      * @return true if this is a predefined system channel
      */
     default boolean isSystemChannel() {
-        return "numdrassl".equals(getNamespace());
+        return SYSTEM_NAMESPACE.equals(getNamespace());
     }
 }
 

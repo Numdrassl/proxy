@@ -4,31 +4,35 @@
  * <p>This package provides a pub/sub messaging system for communication
  * between proxy instances, typically backed by Redis.</p>
  *
+ * <p><strong>Important:</strong> This package uses {@code @MessageSubscribe} for
+ * cross-proxy messages. Do not confuse with {@code @Subscribe} from
+ * {@code api.event} which is for local proxy events.</p>
+ *
  * <h2>Core Interfaces</h2>
  * <ul>
- *   <li>{@link MessagingService} - Main service for publishing and subscribing</li>
- *   <li>{@link Subscription} - Represents an active subscription</li>
- *   <li>{@link MessageHandler} - Callback for received messages</li>
- *   <li>{@link PluginMessageHandler} - Typed callback for plugin messages</li>
+ *   <li>{@link me.internalizable.numdrassl.api.messaging.MessagingService} - Main service for publishing and subscribing</li>
+ *   <li>{@link me.internalizable.numdrassl.api.messaging.Subscription} - Represents an active subscription</li>
+ *   <li>{@link me.internalizable.numdrassl.api.messaging.handler.MessageHandler} - Callback for received messages</li>
+ *   <li>{@link me.internalizable.numdrassl.api.messaging.handler.PluginMessageHandler} - Typed callback for plugin messages</li>
  * </ul>
  *
  * <h2>Channels</h2>
  * <ul>
- *   <li>{@link MessageChannel} - Represents a pub/sub channel</li>
- *   <li>{@link Channels} - Predefined system channels</li>
- *   <li>{@link SystemChannel} - Enum of system channel types</li>
+ *   <li>{@link me.internalizable.numdrassl.api.messaging.channel.MessageChannel} - Represents a pub/sub channel</li>
+ *   <li>{@link me.internalizable.numdrassl.api.messaging.channel.Channels} - Predefined system channels</li>
+ *   <li>{@link me.internalizable.numdrassl.api.messaging.channel.SystemChannel} - Enum of system channel types</li>
  * </ul>
  *
  * <h2>Messages</h2>
  * <ul>
- *   <li>{@link ChannelMessage} - Base interface for all messages</li>
+ *   <li>{@link me.internalizable.numdrassl.api.messaging.ChannelMessage} - Base interface for all messages</li>
  *   <li>{@link me.internalizable.numdrassl.api.messaging.message} - Concrete message types</li>
  * </ul>
  *
- * <h2>Annotation API</h2>
+ * <h2>Annotations</h2>
  * <ul>
- *   <li>{@link Subscribe} - Marks methods as message handlers</li>
- *   <li>{@link TypeAdapter} - Custom serialization for message payloads</li>
+ *   <li>{@link me.internalizable.numdrassl.api.messaging.annotation.MessageSubscribe} - Marks methods as cross-proxy message handlers</li>
+ *   <li>{@link me.internalizable.numdrassl.api.messaging.annotation.TypeAdapter} - Custom serialization for message payloads</li>
  * </ul>
  *
  * <h2>Usage Examples</h2>
@@ -54,12 +58,12 @@
  * @Plugin(id = "my-plugin", name = "My Plugin", version = "1.0.0")
  * public class MyPlugin {
  *
- *     @Subscribe(channel = "events")
+ *     @MessageSubscribe(channel = "events")
  *     public void onEvent(MyData data) {
  *         // Plugin ID inferred from @Plugin annotation
  *     }
  *
- *     @Subscribe(SystemChannel.CHAT)
+ *     @MessageSubscribe(SystemChannel.CHAT)
  *     public void onChat(ChatMessage msg) {
  *         // System channel subscription
  *     }
@@ -69,8 +73,8 @@
  * messaging.registerListener(myPlugin);
  * }</pre>
  *
- * @see MessagingService
- * @see Subscribe
+ * @see me.internalizable.numdrassl.api.messaging.MessagingService
+ * @see me.internalizable.numdrassl.api.messaging.annotation.MessageSubscribe
  */
 package me.internalizable.numdrassl.api.messaging;
 

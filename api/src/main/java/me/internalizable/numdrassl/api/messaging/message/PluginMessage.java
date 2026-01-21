@@ -15,7 +15,7 @@ import java.time.Instant;
  * <ul>
  *   <li>{@link me.internalizable.numdrassl.api.messaging.MessagingService#publishPlugin}</li>
  *   <li>{@link me.internalizable.numdrassl.api.messaging.MessagingService#subscribePlugin}</li>
- *   <li>{@link me.internalizable.numdrassl.api.messaging.Subscribe @Subscribe} annotation</li>
+ *   <li>{@link me.internalizable.numdrassl.api.messaging.annotation.MessageSubscribe @MessageSubscribe} annotation</li>
  * </ul>
  *
  * <h2>Example</h2>

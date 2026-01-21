@@ -1,4 +1,4 @@
-package me.internalizable.numdrassl.messaging;
+package me.internalizable.numdrassl.messaging.processing;
 
 import me.internalizable.numdrassl.api.plugin.Plugin;
 import me.internalizable.numdrassl.api.plugin.PluginContainer;
@@ -82,22 +82,23 @@ public final class PluginIdExtractor {
      */
     @Nullable
     public static String fromPluginManager(@Nonnull Object listener, @Nonnull PluginManager pluginManager) {
-        // First try annotation-based extraction
-        String pluginId = fromListener(listener);
-        if (pluginId != null) {
-            return pluginId;
-        }
-
-        // Check if the listener IS a plugin instance
         for (PluginContainer container : pluginManager.getPlugins()) {
-            if (container.getInstance().isPresent()) {
-                Object pluginInstance = container.getInstance().get();
-                if (pluginInstance == listener) {
-                    return container.getDescription().getId();
-                }
+            if (container.getInstance().map(i -> i == listener).orElse(false)) {
+                return container.getDescription().getId();
             }
         }
-
         return null;
     }
+
+    /**
+     * Extract plugin ID from an explicit plugin object.
+     *
+     * @param plugin the plugin object (must have @Plugin annotation)
+     * @return the plugin ID, or null if not found
+     */
+    @Nullable
+    public static String fromPlugin(@Nonnull Object plugin) {
+        return fromClass(plugin.getClass());
+    }
 }
+

@@ -1,4 +1,4 @@
-package me.internalizable.numdrassl.messaging;
+package me.internalizable.numdrassl.messaging.redis;
 
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
@@ -6,8 +6,17 @@ import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import io.lettuce.core.pubsub.api.async.RedisPubSubAsyncCommands;
 import me.internalizable.numdrassl.api.messaging.*;
+import me.internalizable.numdrassl.api.messaging.annotation.MessageSubscribe;
+import me.internalizable.numdrassl.api.messaging.annotation.TypeAdapter;
+import me.internalizable.numdrassl.api.messaging.channel.Channels;
+import me.internalizable.numdrassl.api.messaging.channel.MessageChannel;
+import me.internalizable.numdrassl.api.messaging.handler.MessageHandler;
+import me.internalizable.numdrassl.api.messaging.handler.PluginMessageHandler;
 import me.internalizable.numdrassl.api.messaging.message.PluginMessage;
 import me.internalizable.numdrassl.config.ProxyConfig;
+import me.internalizable.numdrassl.messaging.codec.MessageCodec;
+import me.internalizable.numdrassl.messaging.processing.PluginIdExtractor;
+import me.internalizable.numdrassl.messaging.processing.SubscribeMethodProcessor;
 import me.internalizable.numdrassl.messaging.subscription.CompositeSubscription;
 import me.internalizable.numdrassl.messaging.subscription.RedisSubscription;
 import me.internalizable.numdrassl.messaging.subscription.SubscriptionEntry;
@@ -59,26 +68,75 @@ public final class RedisMessagingService implements MessagingService {
     private final AtomicLong subscriptionIdCounter = new AtomicLong(0);
     private final AtomicBoolean connected = new AtomicBoolean(false);
 
-    public RedisMessagingService(@Nonnull String localProxyId, @Nonnull ProxyConfig config) {
+    private RedisMessagingService(
+            @Nonnull String localProxyId,
+            @Nonnull RedisClient redisClient,
+            @Nonnull StatefulRedisPubSubConnection<String, String> pubSubConnection,
+            @Nonnull StatefulRedisConnection<String, String> publishConnection) {
         this.localProxyId = localProxyId;
         this.codec = new MessageCodec();
+        this.redisClient = redisClient;
+        this.pubSubConnection = pubSubConnection;
+        this.publishConnection = publishConnection;
+        this.pubSubCommands = pubSubConnection.async();
         this.methodProcessor = new SubscribeMethodProcessor(localProxyId, codec, createSubscriptionFactory());
 
+        pubSubConnection.addListener(new RedisMessageListener(this::handleMessage));
+        connected.set(true);
+    }
+
+    /**
+     * Factory method to create a Redis messaging service.
+     *
+     * @param localProxyId the local proxy identifier
+     * @param config the proxy configuration containing Redis settings
+     * @return a new connected Redis messaging service
+     * @throws RedisConnectionException if connection to Redis fails
+     */
+    @Nonnull
+    public static RedisMessagingService create(@Nonnull String localProxyId, @Nonnull ProxyConfig config) {
         RedisURI redisUri = buildRedisUri(config);
         LOGGER.info("Connecting to Redis at {}:{}", config.getRedisHost(), config.getRedisPort());
 
-        this.redisClient = RedisClient.create(redisUri);
-        this.pubSubConnection = redisClient.connectPubSub();
-        this.publishConnection = redisClient.connect();
-        this.pubSubCommands = pubSubConnection.async();
+        RedisClient redisClient = RedisClient.create(redisUri);
+        StatefulRedisPubSubConnection<String, String> pubSubConnection = null;
+        StatefulRedisConnection<String, String> publishConnection = null;
 
-        pubSubConnection.addListener(new RedisMessageListener(this::handleMessage));
+        try {
+            pubSubConnection = redisClient.connectPubSub();
+            publishConnection = redisClient.connect();
 
-        connected.set(true);
-        LOGGER.info("Redis messaging service connected");
+            RedisMessagingService service = new RedisMessagingService(
+                    localProxyId, redisClient, pubSubConnection, publishConnection
+            );
+
+            LOGGER.info("Redis messaging service connected");
+            return service;
+        } catch (Exception e) {
+            closeQuietly(publishConnection);
+            closeQuietly(pubSubConnection);
+            shutdownQuietly(redisClient);
+
+            LOGGER.error("Failed to connect to Redis: {}", e.getMessage());
+            throw new RedisConnectionException("Failed to connect to Redis", e);
+        }
     }
 
-    private RedisURI buildRedisUri(ProxyConfig config) {
+    /**
+     * Factory method for async initialization.
+     *
+     * @param localProxyId the local proxy identifier
+     * @param config the proxy configuration
+     * @return a future that completes with the messaging service
+     */
+    @Nonnull
+    public static CompletableFuture<RedisMessagingService> createAsync(
+            @Nonnull String localProxyId,
+            @Nonnull ProxyConfig config) {
+        return CompletableFuture.supplyAsync(() -> create(localProxyId, config));
+    }
+
+    private static RedisURI buildRedisUri(ProxyConfig config) {
         RedisURI.Builder uriBuilder = RedisURI.builder()
                 .withHost(config.getRedisHost())
                 .withPort(config.getRedisPort())
@@ -259,7 +317,7 @@ public final class RedisMessagingService implements MessagingService {
         List<Subscription> subs = new ArrayList<>();
 
         for (Method method : listener.getClass().getDeclaredMethods()) {
-            Subscribe annotation = method.getAnnotation(Subscribe.class);
+            MessageSubscribe annotation = method.getAnnotation(MessageSubscribe.class);
             if (annotation == null) {
                 continue;
             }
@@ -268,13 +326,13 @@ public final class RedisMessagingService implements MessagingService {
                 Subscription sub = methodProcessor.process(listener, method, annotation, explicitPluginId);
                 subs.add(sub);
             } catch (Exception e) {
-                LOGGER.error("Failed to register @Subscribe method {}.{}: {}",
+                LOGGER.error("Failed to register @MessageSubscribe method {}.{}: {}",
                         listener.getClass().getSimpleName(), method.getName(), e.getMessage());
             }
         }
 
         if (subs.isEmpty()) {
-            LOGGER.warn("No @Subscribe methods found in {}", listener.getClass().getSimpleName());
+            LOGGER.warn("No @MessageSubscribe methods found in {}", listener.getClass().getSimpleName());
         } else {
             listenerSubscriptions.put(listener, subs);
             LOGGER.debug("Registered {} @Subscribe methods from {}",
@@ -308,34 +366,13 @@ public final class RedisMessagingService implements MessagingService {
 
     // ==================== Internal ====================
 
-    /**
-     * Raw subscription method used by SubscriptionFactory to avoid generic issues.
-     */
     private Subscription addSubscriptionRaw(
             MessageChannel channel,
             MessageHandler<ChannelMessage> handler,
             Class<? extends ChannelMessage> messageType,
             boolean includeSelf) {
 
-        long id = subscriptionIdCounter.incrementAndGet();
-        SubscriptionEntry entry = new SubscriptionEntry(
-                id, channel, handler, messageType, includeSelf
-        );
-
-        boolean needsSubscribe;
-        synchronized (subscriptions) {
-            List<SubscriptionEntry> handlers = subscriptions.computeIfAbsent(
-                    channel.getId(), k -> new CopyOnWriteArrayList<>());
-            needsSubscribe = handlers.isEmpty();
-            handlers.add(entry);
-        }
-
-        if (needsSubscribe) {
-            pubSubCommands.subscribe(channel.getId())
-                    .thenAccept(v -> LOGGER.debug("Subscribed to channel: {}", channel));
-        }
-
-        return new RedisSubscription(entry, this::isConnected, this::removeSubscription);
+        return doAddSubscription(channel, handler, messageType, includeSelf);
     }
 
     @SuppressWarnings("unchecked")
@@ -345,11 +382,23 @@ public final class RedisMessagingService implements MessagingService {
             Class<T> messageType,
             boolean includeSelf) {
 
+        return doAddSubscription(
+                channel,
+                (MessageHandler<ChannelMessage>) handler,
+                messageType,
+                includeSelf
+        );
+    }
+
+    private Subscription doAddSubscription(
+            MessageChannel channel,
+            MessageHandler<ChannelMessage> handler,
+            Class<? extends ChannelMessage> messageType,
+            boolean includeSelf) {
+
         long id = subscriptionIdCounter.incrementAndGet();
         SubscriptionEntry entry = new SubscriptionEntry(
-                id, channel,
-                (MessageHandler<ChannelMessage>) handler,
-                messageType, includeSelf
+                id, channel, handler, messageType, includeSelf
         );
 
         boolean needsSubscribe;
@@ -419,6 +468,38 @@ public final class RedisMessagingService implements MessagingService {
                     pubSubCommands.unsubscribe(entry.getChannel().getId());
                     LOGGER.debug("Unsubscribed from channel: {} (no more handlers)", entry.getChannel());
                 }
+            }
+        }
+    }
+
+    // ==================== Resource Cleanup Helpers ====================
+
+    private static void closeQuietly(StatefulRedisConnection<?, ?> connection) {
+        if (connection != null) {
+            try {
+                connection.close();
+            } catch (Exception e) {
+                LOGGER.debug("Error closing Redis connection", e);
+            }
+        }
+    }
+
+    private static void closeQuietly(StatefulRedisPubSubConnection<?, ?> connection) {
+        if (connection != null) {
+            try {
+                connection.close();
+            } catch (Exception e) {
+                LOGGER.debug("Error closing Redis pub/sub connection", e);
+            }
+        }
+    }
+
+    private static void shutdownQuietly(RedisClient client) {
+        if (client != null) {
+            try {
+                client.shutdown();
+            } catch (Exception e) {
+                LOGGER.debug("Error shutting down Redis client", e);
             }
         }
     }

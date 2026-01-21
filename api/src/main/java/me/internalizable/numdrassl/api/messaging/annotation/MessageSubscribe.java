@@ -1,4 +1,7 @@
-package me.internalizable.numdrassl.api.messaging;
+package me.internalizable.numdrassl.api.messaging.annotation;
+
+import me.internalizable.numdrassl.api.messaging.MessagingService;
+import me.internalizable.numdrassl.api.messaging.channel.SystemChannel;
 
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
@@ -9,7 +12,7 @@ import java.lang.annotation.Target;
 /**
  * Marks a method as a cross-proxy message subscriber.
  *
- * <p>Methods annotated with {@code @Subscribe} are automatically registered
+ * <p>Methods annotated with {@code @MessageSubscribe} are automatically registered
  * when the containing class is registered with the messaging service.</p>
  *
  * <h2>Method Signature</h2>
@@ -22,25 +25,25 @@ import java.lang.annotation.Target;
  * public class MyPlugin {
  *
  *     // Plugin message subscription - plugin ID is inferred from @Plugin
- *     @Subscribe(channel = "scores")
+ *     @MessageSubscribe(channel = "scores")
  *     public void onScoreUpdate(ScoreData data) {
  *         logger.info("Player {} scored {}", data.playerName(), data.score());
  *     }
  *
  *     // Plugin message with source proxy ID
- *     @Subscribe(channel = "events")
+ *     @MessageSubscribe(channel = "events")
  *     public void onGameEvent(String sourceProxyId, GameEvent event) {
  *         logger.info("Received event from proxy {}", sourceProxyId);
  *     }
  *
  *     // Subscribe to system channel messages (type-safe enum)
- *     @Subscribe(SystemChannel.CHAT)
+ *     @MessageSubscribe(SystemChannel.CHAT)
  *     public void onChatMessage(ChatMessage message) {
  *         // Handle cross-proxy chat
  *     }
  *
  *     // Subscribe to heartbeats
- *     @Subscribe(SystemChannel.HEARTBEAT)
+ *     @MessageSubscribe(SystemChannel.HEARTBEAT)
  *     public void onHeartbeat(HeartbeatMessage message) {
  *         logger.info("Proxy {} is alive", message.sourceProxyId());
  *     }
@@ -53,13 +56,13 @@ import java.lang.annotation.Target;
  * proxy.getMessagingService().registerListener(this);
  * }</pre>
  *
- * @see MessagingService#registerListener(Object)
  * @see SystemChannel
+ * @see MessagingService#registerListener(Object)
  */
 @Documented
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
-public @interface Subscribe {
+public @interface MessageSubscribe {
 
     /**
      * The system channel to subscribe to.

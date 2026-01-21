@@ -114,12 +114,13 @@ public interface ClusterManager {
     boolean isPlayerOnline(@Nonnull UUID playerUuid);
 
     /**
-     * Get the proxy with the lowest load in a region.
+     * Get the proxy with the lowest load in a specific region.
      *
-     * <p>Useful for load balancing new connections.</p>
+     * <p>Useful for load balancing new connections within a region.
+     * Use {@link #getLeastLoadedProxy()} for any region.</p>
      *
-     * @param region the region to search, or null for any region
-     * @return the least loaded proxy, or empty if none available
+     * @param region the region to search (must not be null)
+     * @return the least loaded proxy in that region, or empty if none available
      */
     @Nonnull
     Optional<ProxyInfo> getLeastLoadedProxy(@Nonnull String region);

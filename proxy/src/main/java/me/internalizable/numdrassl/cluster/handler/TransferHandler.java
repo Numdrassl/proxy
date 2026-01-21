@@ -3,7 +3,7 @@ package me.internalizable.numdrassl.cluster.handler;
 import com.hypixel.hytale.protocol.HostAddress;
 import com.hypixel.hytale.protocol.packets.auth.ClientReferral;
 import me.internalizable.numdrassl.api.cluster.ProxyInfo;
-import me.internalizable.numdrassl.api.messaging.Channels;
+import me.internalizable.numdrassl.api.messaging.channel.Channels;
 import me.internalizable.numdrassl.api.messaging.MessagingService;
 import me.internalizable.numdrassl.api.messaging.Subscription;
 import me.internalizable.numdrassl.api.messaging.message.TransferMessage;

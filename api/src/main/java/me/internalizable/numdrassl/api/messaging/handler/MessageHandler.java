@@ -1,4 +1,7 @@
-package me.internalizable.numdrassl.api.messaging;
+package me.internalizable.numdrassl.api.messaging.handler;
+
+import me.internalizable.numdrassl.api.messaging.ChannelMessage;
+import me.internalizable.numdrassl.api.messaging.channel.MessageChannel;
 
 import javax.annotation.Nonnull;
 

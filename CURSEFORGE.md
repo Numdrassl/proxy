@@ -284,9 +284,22 @@ Players are trying to connect directly to the backend. Set up firewall rules to 
 ### Client shows "unexpected packet"
 The backend server may not have the Bridge plugin installed, or isn't running with `--auth-mode insecure`.
 
+### Redis connection failed (Cluster Mode)
+1. Verify Redis server is running and accessible
+2. Check `redis.host` and `redis.port` in your config
+3. If using authentication, ensure `redis.password` is correct
+4. Verify firewall allows connections to Redis port
+
+### Players not synced across proxies (Cluster Mode)
+1. Ensure all proxies have `cluster.enabled: true`
+2. Verify all proxies connect to the same Redis instance
+3. Check that `cluster.proxyId` is unique for each proxy
+
 ---
 
 ## Architecture Overview
+
+### Single Proxy Mode
 
 ```
 ┌─────────────┐                    ┌─────────────┐                    ┌─────────────┐
@@ -299,11 +312,231 @@ The backend server may not have the Bridge plugin installed, or isn't running wi
                                           └── minigames
 ```
 
+### Cluster Mode (Multi-Proxy)
+
+```
+                              ┌──────────────────────────────────┐
+                              │            Redis                 │
+                              │   ┌────────────────────────┐     │
+                              │   │  Pub/Sub Channels      │     │
+                              │   │  • numdrassl:heartbeat │     │
+                              │   │  • numdrassl:chat      │     │
+                              │   │  • numdrassl:transfer  │     │
+                              │   │  • numdrassl:broadcast │     │
+                              │   └────────────────────────┘     │
+                              │   ┌────────────────────────┐     │
+                              │   │  Shared State          │     │
+                              │   │  • Player locations    │     │
+                              │   │  • Proxy registry      │     │
+                              │   │  • Player counts       │     │
+                              │   └────────────────────────┘     │
+                              └──────────────┬───────────────────┘
+                                             │
+           ┌─────────────────────────────────┼─────────────────────────────────┐
+           │                                 │                                 │
+    ┌──────▼──────┐                   ┌──────▼──────┐                   ┌──────▼──────┐
+    │ Proxy (EU)  │                   │ Proxy (US)  │                   │ Proxy (Asia)│
+    │ proxy-eu-1  │◄─── Transfer ────►│ proxy-us-1  │◄─── Transfer ────►│ proxy-as-1  │
+    └──────┬──────┘                   └──────┬──────┘                   └──────┬──────┘
+           │                                 │                                 │
+    ┌──────▼──────┐                   ┌──────▼──────┐                   ┌──────▼──────┐
+    │  Backends   │                   │  Backends   │                   │  Backends   │
+    │  • lobby    │                   │  • lobby    │                   │  • lobby    │
+    │  • games    │                   │  • games    │                   │  • games    │
+    └─────────────┘                   └─────────────┘                   └─────────────┘
+```
+
+### Authentication Flow
+
+```
+┌────────┐          ┌───────────┐          ┌─────────────┐          ┌─────────┐
+│ Player │          │   Proxy   │          │   Hytale    │          │ Backend │
+└───┬────┘          └─────┬─────┘          │  Sessions   │          └────┬────┘
+    │                     │                └──────┬──────┘               │
+    │  1. Connect         │                       │                      │
+    │  (identity_token)   │                       │                      │
+    │────────────────────►│                       │                      │
+    │                     │  2. Request auth      │                      │
+    │                     │     grant             │                      │
+    │                     │──────────────────────►│                      │
+    │                     │                       │                      │
+    │                     │  3. auth_grant        │                      │
+    │                     │◄──────────────────────│                      │
+    │  4. AuthGrant       │                       │                      │
+    │◄────────────────────│                       │                      │
+    │                     │                       │                      │
+    │  5. AuthToken       │                       │                      │
+    │────────────────────►│  6. Exchange token    │                      │
+    │                     │──────────────────────►│                      │
+    │                     │◄──────────────────────│                      │
+    │  7. ServerAuthToken │                       │                      │
+    │◄────────────────────│                       │                      │
+    │                     │                       │                      │
+    │                     │  8. Connect + HMAC-signed referral           │
+    │                     │─────────────────────────────────────────────►│
+    │                     │                       │                      │
+    │                     │  9. ConnectAccept (secret validated)         │
+    │                     │◄─────────────────────────────────────────────│
+    │                     │                       │                      │
+```
+
+### Cross-Proxy Transfer Flow
+
+```
+┌────────┐     ┌──────────┐                    ┌──────────┐     ┌─────────┐
+│ Player │     │ Proxy A  │                    │ Proxy B  │     │ Backend │
+│        │     │ (source) │      Redis         │ (target) │     │ Server  │
+└───┬────┘     └────┬─────┘        │           └────┬─────┘     └────┬────┘
+    │               │              │                │                │
+    │ /server hub   │              │                │                │
+    │──────────────►│              │                │                │
+    │               │              │                │                │
+    │               │  1. Publish  │                │                │
+    │               │  TransferMsg │                │                │
+    │               │─────────────►│                │                │
+    │               │              │                │                │
+    │               │              │  2. Subscribe  │                │
+    │               │              │  receives msg  │                │
+    │               │              │───────────────►│                │
+    │               │              │                │                │
+    │ 3. ClientReferral            │                │                │
+    │ (reconnect to Proxy B)       │                │                │
+    │◄──────────────│              │                │                │
+    │               │              │                │                │
+    │ 4. New connection            │                │                │
+    │─────────────────────────────────────────────►│                │
+    │               │              │                │                │
+    │               │              │                │  5. Forward    │
+    │               │              │                │  to backend    │
+    │               │              │                │───────────────►│
+```
+
 1. **Player connects** to the proxy with their Hytale credentials
 2. **Proxy authenticates** the player with Hytale session service
 3. **Proxy forwards** the connection to the default backend with signed referral
 4. **Backend validates** the referral using the shared secret
 5. **Packets flow** bidirectionally through the proxy
+6. **In cluster mode**, player state and messages sync via Redis pub/sub
+
+---
+
+## Cluster Mode (Multi-Proxy Networks)
+
+For large networks, you can run multiple Numdrassl proxies across different regions with shared state using Redis.
+
+### Overview
+
+```
+                                    ┌─────────────────┐
+                                    │     Redis       │
+                                    │  (Pub/Sub Hub)  │
+                                    └────────┬────────┘
+                    ┌───────────────────────┼───────────────────────┐
+                    │                       │                       │
+            ┌───────▼───────┐       ┌───────▼───────┐       ┌───────▼───────┐
+            │  Proxy (EU)   │       │  Proxy (US)   │       │  Proxy (Asia) │
+            │  Region: eu   │       │  Region: us   │       │  Region: asia │
+            └───────┬───────┘       └───────┬───────┘       └───────┬───────┘
+                    │                       │                       │
+            ┌───────▼───────┐       ┌───────▼───────┐       ┌───────▼───────┐
+            │   Backends    │       │   Backends    │       │   Backends    │
+            └───────────────┘       └───────────────┘       └───────────────┘
+```
+
+### Cluster Features
+
+- **Cross-Proxy Player Tracking** - Know which players are online across all proxies
+- **Cross-Proxy Messaging** - Send messages to players on other proxies
+- **Cross-Proxy Transfers** - Transfer players between servers on different proxies
+- **Load Balancing** - Route players to the least loaded proxy in their region
+- **Health Monitoring** - Automatic heartbeat and stale proxy detection
+
+### Redis Configuration
+
+Add to your `config/proxy.yml`:
+
+```yaml
+# Cluster Settings
+cluster:
+  enabled: true
+  
+  # Unique ID for this proxy instance (auto-generated if not set)
+  proxyId: "proxy-eu-1"
+  
+  # Region identifier for geographic load balancing
+  region: "eu"
+  
+  # Redis connection settings
+  redis:
+    host: "redis.yourserver.com"
+    port: 6379
+    password: "your-redis-password"  # Optional
+    database: 0
+    
+    # Connection pool settings
+    poolSize: 10
+    timeout: 5000  # milliseconds
+```
+
+### Cluster Configuration Options
+
+| Option | Description |
+|--------|-------------|
+| `cluster.enabled` | Enable cluster mode (`true`/`false`) |
+| `cluster.proxyId` | Unique identifier for this proxy instance |
+| `cluster.region` | Geographic region (e.g., `eu`, `us`, `asia`) |
+| `redis.host` | Redis server hostname |
+| `redis.port` | Redis server port (default: `6379`) |
+| `redis.password` | Redis authentication password (optional) |
+| `redis.database` | Redis database number (default: `0`) |
+| `redis.poolSize` | Connection pool size (default: `10`) |
+| `redis.timeout` | Connection timeout in ms (default: `5000`) |
+
+### Cross-Proxy Commands
+
+When cluster mode is enabled:
+
+| Command | Description |
+|---------|-------------|
+| `/server <name>` | Transfer to a server (works across proxies) |
+| `/numdrassl cluster info` | Show cluster status and connected proxies |
+| `/numdrassl cluster players` | List players across all proxies |
+
+### Plugin Messaging API
+
+Plugins can send messages across the cluster:
+
+```java
+@Plugin(id = "my-plugin", name = "My Plugin", version = "1.0.0")
+public class MyPlugin {
+    
+    @Inject
+    private MessagingService messaging;
+    
+    // Subscribe to custom messages
+    @Subscribe(channel = "my-channel")
+    public void onCustomMessage(MyCustomData data) {
+        // Handle message from any proxy
+    }
+    
+    // Publish messages to all proxies
+    public void broadcastToCluster(String message) {
+        messaging.publish("my-channel", new MyCustomData(message));
+    }
+}
+```
+
+### System Channels
+
+The cluster uses these internal channels (plugins can subscribe):
+
+| Channel | Purpose |
+|---------|---------|
+| `numdrassl:heartbeat` | Proxy health monitoring |
+| `numdrassl:player_count` | Player count synchronization |
+| `numdrassl:chat` | Cross-proxy chat messages |
+| `numdrassl:transfer` | Cross-proxy player transfers |
+| `numdrassl:broadcast` | Server-wide announcements |
 
 ---
 

@@ -1,6 +1,8 @@
-package me.internalizable.numdrassl.messaging;
+package me.internalizable.numdrassl.messaging.redis;
 
 import io.lettuce.core.pubsub.RedisPubSubAdapter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.function.BiConsumer;
 
@@ -11,6 +13,8 @@ import java.util.function.BiConsumer;
  * configured handler for processing.</p>
  */
 public final class RedisMessageListener extends RedisPubSubAdapter<String, String> {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(RedisMessageListener.class);
 
     private final BiConsumer<String, String> messageHandler;
 
@@ -25,7 +29,11 @@ public final class RedisMessageListener extends RedisPubSubAdapter<String, Strin
 
     @Override
     public void message(String channel, String message) {
-        messageHandler.accept(channel, message);
+        try {
+            messageHandler.accept(channel, message);
+        } catch (Exception e) {
+            LOGGER.error("Failed to handle message on channel '{}': {}", channel, e.getMessage(), e);
+        }
     }
 }
 
