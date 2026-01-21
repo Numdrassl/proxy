@@ -408,11 +408,12 @@ java {
 ```java
 package com.example.myplugin;
 
-import me.internalizable.numdrassl.api.Numdrassl;
 import me.internalizable.numdrassl.api.ProxyServer;
 import me.internalizable.numdrassl.api.event.Subscribe;
 import me.internalizable.numdrassl.api.event.proxy.ProxyInitializeEvent;
+import me.internalizable.numdrassl.api.plugin.Inject;
 import me.internalizable.numdrassl.api.plugin.Plugin;
+import org.slf4j.Logger;
 
 @Plugin(
     id = "my-plugin",
@@ -423,10 +424,15 @@ import me.internalizable.numdrassl.api.plugin.Plugin;
 )
 public class MyPlugin {
 
+    @Inject
+    private ProxyServer server;
+    
+    @Inject
+    private Logger logger;
+
     @Subscribe
     public void onProxyInitialize(ProxyInitializeEvent event) {
-        ProxyServer proxy = Numdrassl.getProxy();
-        proxy.getLogger().info("My plugin loaded!");
+        logger.info("My plugin loaded! {} players online.", server.getPlayerCount());
     }
 }
 ```
@@ -637,11 +643,17 @@ messaging.publishPlugin("my-plugin", "scores", new ScoreData("Steve", 100));
 #### Annotation-Based Messaging
 
 ```java
+import me.internalizable.numdrassl.api.messaging.MessagingService;
 import me.internalizable.numdrassl.api.messaging.annotation.MessageSubscribe;
 import me.internalizable.numdrassl.api.messaging.channel.SystemChannel;
+import me.internalizable.numdrassl.api.plugin.Inject;
+import me.internalizable.numdrassl.api.plugin.Plugin;
 
 @Plugin(id = "my-plugin", name = "My Plugin", version = "1.0.0")
 public class MyPlugin {
+
+    @Inject
+    private MessagingService messaging;
 
     // Plugin channel subscription - plugin ID inferred from @Plugin
     @MessageSubscribe(channel = "scores")
@@ -659,6 +671,11 @@ public class MyPlugin {
     @MessageSubscribe(value = SystemChannel.HEARTBEAT, includeSelf = true)
     public void onHeartbeat(HeartbeatMessage msg) {
         logger.info("Proxy {} is alive", msg.sourceProxyId());
+    }
+    
+    // Publish to all proxies
+    public void broadcastScore(String player, int score) {
+        messaging.publishPlugin("my-plugin", "scores", new ScoreData(player, score));
     }
 }
 ```

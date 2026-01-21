@@ -66,13 +66,13 @@ Create a main class annotated with `@Plugin`:
 ```java
 package com.example.myplugin;
 
-import me.internalizable.numdrassl.api.Numdrassl;
 import me.internalizable.numdrassl.api.ProxyServer;
 import me.internalizable.numdrassl.api.event.Subscribe;
 import me.internalizable.numdrassl.api.event.proxy.ProxyInitializeEvent;
+import me.internalizable.numdrassl.api.event.proxy.ProxyShutdownEvent;
+import me.internalizable.numdrassl.api.plugin.Inject;
 import me.internalizable.numdrassl.api.plugin.Plugin;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 @Plugin(
     id = "my-plugin",
@@ -83,31 +83,82 @@ import org.slf4j.LoggerFactory;
 )
 public class MyPlugin {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(MyPlugin.class);
+    @Inject
+    private ProxyServer server;
+    
+    @Inject
+    private Logger logger;
 
     @Subscribe
     public void onProxyInitialize(ProxyInitializeEvent event) {
-        LOGGER.info("My plugin has been enabled!");
-        
-        // Access the proxy server
-        ProxyServer proxy = Numdrassl.getProxy();
+        logger.info("My plugin has been enabled!");
         
         // Register event listeners
-        proxy.getEventManager().register(this, new MyEventListener());
+        server.getEventManager().register(this, new MyEventListener());
         
         // Register commands
-        proxy.getCommandManager().register(this, "hello", (source, args) -> {
+        server.getCommandManager().register(this, "hello", (source, args) -> {
             source.sendMessage("Hello from my plugin!");
             return me.internalizable.numdrassl.api.command.CommandResult.success();
         });
     }
 
     @Subscribe
-    public void onProxyShutdown(me.internalizable.numdrassl.api.event.proxy.ProxyShutdownEvent event) {
-        LOGGER.info("My plugin is shutting down!");
+    public void onProxyShutdown(ProxyShutdownEvent event) {
+        logger.info("My plugin is shutting down!");
     }
 }
 ```
+
+### Dependency Injection
+
+Numdrassl supports automatic dependency injection via the `@Inject` annotation:
+
+```java
+@Plugin(id = "my-plugin", name = "My Plugin", version = "1.0.0")
+public class MyPlugin {
+
+    // Field injection
+    @Inject private ProxyServer server;
+    @Inject private Logger logger;
+    @Inject private MessagingService messaging;
+    @Inject private EventManager eventManager;
+    @Inject private CommandManager commandManager;
+    @Inject private Scheduler scheduler;
+    
+    @Inject @DataDirectory
+    private Path dataDirectory;  // Plugin's data folder
+}
+```
+
+Or use constructor injection:
+
+```java
+@Plugin(id = "my-plugin", name = "My Plugin", version = "1.0.0")
+public class MyPlugin {
+
+    private final ProxyServer server;
+    private final Logger logger;
+
+    @Inject
+    public MyPlugin(ProxyServer server, Logger logger) {
+        this.server = server;
+        this.logger = logger;
+    }
+}
+```
+
+**Available Injectables:**
+
+| Type                          | Description                        |
+|-------------------------------|------------------------------------|
+| `ProxyServer`                 | The proxy server instance          |
+| `EventManager`                | Event registration and dispatch    |
+| `CommandManager`              | Command registration               |
+| `MessagingService`            | Cross-proxy messaging              |
+| `Scheduler`                   | Task scheduling                    |
+| `Logger`                      | Plugin-specific SLF4J logger       |
+| `Path` with `@DataDirectory`  | Plugin's data directory            |
 
 ### Installing Your Plugin
 

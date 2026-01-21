@@ -122,12 +122,22 @@ public class MyListener {
 ### Example: Cross-Proxy Messages
 
 ```java
+import me.internalizable.numdrassl.api.messaging.MessagingService;
 import me.internalizable.numdrassl.api.messaging.annotation.MessageSubscribe;
 import me.internalizable.numdrassl.api.messaging.channel.SystemChannel;
 import me.internalizable.numdrassl.api.messaging.message.ChatMessage;
+import me.internalizable.numdrassl.api.plugin.Inject;
+import me.internalizable.numdrassl.api.plugin.Plugin;
+import org.slf4j.Logger;
 
 @Plugin(id = "my-plugin", name = "My Plugin", version = "1.0.0")
 public class MyPlugin {
+
+    @Inject
+    private MessagingService messaging;
+    
+    @Inject
+    private Logger logger;
     
     @MessageSubscribe(SystemChannel.CHAT)  // Cross-proxy message from Redis
     public void onCrossProxyChat(ChatMessage msg) {
@@ -138,6 +148,11 @@ public class MyPlugin {
     @MessageSubscribe(channel = "scores")  // Plugin-specific channel
     public void onScoreUpdate(ScoreData data) {
         // Custom plugin message from another proxy
+    }
+    
+    // Publish to all proxies
+    public void broadcastScore(ScoreData data) {
+        messaging.publishPlugin("my-plugin", "scores", data);
     }
 }
 ```

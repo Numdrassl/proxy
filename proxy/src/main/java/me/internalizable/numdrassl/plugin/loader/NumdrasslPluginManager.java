@@ -42,10 +42,12 @@ public final class NumdrasslPluginManager implements PluginManager {
     private final Path pluginsDirectory;
     private final Map<String, NumdrasslPluginContainer> plugins = new ConcurrentHashMap<>();
     private final List<Path> additionalPaths = new ArrayList<>();
+    private final PluginDependencyInjector injector;
 
     public NumdrasslPluginManager(@Nonnull ProxyServer proxyServer, @Nonnull Path pluginsDirectory) {
         this.proxyServer = Objects.requireNonNull(proxyServer, "proxyServer");
         this.pluginsDirectory = Objects.requireNonNull(pluginsDirectory, "pluginsDirectory");
+        this.injector = new PluginDependencyInjector(proxyServer);
     }
 
     // ==================== Plugin Loading ====================
@@ -220,10 +222,12 @@ public final class NumdrasslPluginManager implements PluginManager {
 
         try {
             Class<?> mainClass = classLoader.loadClass(dp.mainClass());
-            Object instance = mainClass.getDeclaredConstructor().newInstance();
 
             Path dataDir = pluginsDirectory.resolve(dp.getId());
             Files.createDirectories(dataDir);
+
+            // Use dependency injector to create instance
+            Object instance = injector.createInstance(mainClass, dp.getId(), dataDir);
 
             NumdrasslPluginContainer container = new NumdrasslPluginContainer(
                 dp.description(), instance, dataDir, classLoader
