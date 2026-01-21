@@ -224,6 +224,37 @@ backends:
 
 Each backend server requires the Bridge plugin with matching `proxySecret`.
 
+### Cluster Configuration (Optional)
+
+For multi-proxy deployments across regions, Numdrassl supports Redis-based clustering:
+
+```yaml
+# Enable cluster mode
+clusterEnabled: true
+
+# Redis connection settings
+redisHost: "localhost"
+redisPort: 6379
+redisPassword: null      # Set if Redis requires auth
+redisSsl: false
+redisDatabase: 0
+
+# Proxy identity (auto-generated if null)
+proxyId: "proxy-eu-1"
+proxyRegion: "eu-west"
+```
+
+**Cluster Features:**
+- **Global Player Count**: `proxy.getGlobalPlayerCount()` returns players across all proxies
+- **Cross-Proxy Chat**: Send messages to players on other proxies
+- **Proxy Discovery**: Track which proxies are online via heartbeats
+- **Load Balancing**: `clusterManager.getLeastLoadedProxy("eu-west")` for routing
+
+**Events:**
+- `ProxyJoinClusterEvent` - A new proxy joined the cluster
+- `ProxyLeaveClusterEvent` - A proxy left (graceful or timeout)
+- `CrossProxyMessageEvent` - Plugin-defined cross-proxy messages
+
 ---
 
 ## Backend Server Setup (Bridge)
@@ -427,6 +458,9 @@ if (player != null) {
 | `ServerConnectEvent` | Player connecting to backend (cancellable) |
 | `ServerConnectedEvent` | Player connected to backend |
 | `ServerDisconnectEvent` | Player disconnected from backend |
+| `ProxyJoinClusterEvent` | A proxy joined the cluster (cluster mode) |
+| `ProxyLeaveClusterEvent` | A proxy left the cluster (cluster mode) |
+| `CrossProxyMessageEvent` | Plugin message from another proxy (cluster mode) |
 
 ### Installing Plugins
 
@@ -459,6 +493,41 @@ Optional<RegisteredServer> server = proxy.getServer("lobby");
 EventManager events = proxy.getEventManager();
 CommandManager commands = proxy.getCommandManager();
 Scheduler scheduler = proxy.getScheduler();
+
+// Cluster (when clusterEnabled: true)
+ClusterManager cluster = proxy.getClusterManager();
+MessagingService messaging = proxy.getMessagingService();
+int globalCount = proxy.getGlobalPlayerCount();
+```
+
+### ClusterManager
+
+```java
+// Check if clustering is enabled
+if (cluster.isClusterMode()) {
+    // Get all online proxies
+    Collection<ProxyInfo> proxies = cluster.getOnlineProxies();
+    
+    // Find least loaded proxy in a region
+    Optional<ProxyInfo> best = cluster.getLeastLoadedProxy("eu-west");
+    
+    // Check if player is online anywhere
+    boolean online = cluster.isPlayerOnline(playerUuid);
+}
+```
+
+### MessagingService
+
+```java
+// Subscribe to cross-proxy messages
+messaging.subscribe(MessageChannel.CHAT, ChatMessage.class, (channel, msg) -> {
+    logger.info("Chat from proxy {}: {}", msg.sourceProxyId(), msg.message());
+});
+
+// Send message to all proxies
+messaging.publish(MessageChannel.BROADCAST, new BroadcastMessage(
+    proxyId, Instant.now(), "Server restarting in 5 minutes!", BroadcastType.WARNING
+));
 ```
 
 ### Player

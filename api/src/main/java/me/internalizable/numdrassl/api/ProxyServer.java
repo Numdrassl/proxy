@@ -1,7 +1,9 @@
 package me.internalizable.numdrassl.api;
 
+import me.internalizable.numdrassl.api.cluster.ClusterManager;
 import me.internalizable.numdrassl.api.command.CommandManager;
 import me.internalizable.numdrassl.api.event.EventManager;
+import me.internalizable.numdrassl.api.messaging.MessagingService;
 import me.internalizable.numdrassl.api.permission.PermissionManager;
 import me.internalizable.numdrassl.api.player.Player;
 import me.internalizable.numdrassl.api.plugin.PluginManager;
@@ -85,6 +87,37 @@ public interface ProxyServer {
      */
     @Nonnull
     PermissionManager getPermissionManager();
+
+    /**
+     * Get the messaging service for cross-proxy communication.
+     *
+     * <p>The messaging service enables pub/sub communication between proxy instances
+     * in a distributed deployment. Returns a no-op implementation if clustering is disabled.</p>
+     *
+     * @return the messaging service
+     */
+    @Nonnull
+    MessagingService getMessagingService();
+
+    /**
+     * Get the cluster manager for managing proxy instances.
+     *
+     * <p>The cluster manager tracks all online proxies, aggregates global state,
+     * and provides methods for cross-proxy coordination.</p>
+     *
+     * @return the cluster manager
+     */
+    @Nonnull
+    ClusterManager getClusterManager();
+
+    /**
+     * Get the total player count across all proxies in the cluster.
+     *
+     * <p>If clustering is disabled, returns the local player count.</p>
+     *
+     * @return the global player count
+     */
+    int getGlobalPlayerCount();
 
     /**
      * Get all currently connected players.

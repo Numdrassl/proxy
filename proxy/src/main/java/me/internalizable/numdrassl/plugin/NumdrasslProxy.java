@@ -2,13 +2,16 @@ package me.internalizable.numdrassl.plugin;
 
 import me.internalizable.numdrassl.api.Numdrassl;
 import me.internalizable.numdrassl.api.ProxyServer;
+import me.internalizable.numdrassl.api.cluster.ClusterManager;
 import me.internalizable.numdrassl.api.command.CommandManager;
 import me.internalizable.numdrassl.api.event.EventManager;
+import me.internalizable.numdrassl.api.messaging.MessagingService;
 import me.internalizable.numdrassl.api.permission.PermissionManager;
 import me.internalizable.numdrassl.api.player.Player;
 import me.internalizable.numdrassl.api.plugin.PluginManager;
 import me.internalizable.numdrassl.api.scheduler.Scheduler;
 import me.internalizable.numdrassl.api.server.RegisteredServer;
+import me.internalizable.numdrassl.cluster.NumdrasslClusterManager;
 import me.internalizable.numdrassl.command.CommandEventListener;
 import me.internalizable.numdrassl.command.NumdrasslCommandManager;
 import me.internalizable.numdrassl.command.builtin.AuthCommand;
@@ -18,6 +21,8 @@ import me.internalizable.numdrassl.command.builtin.ServerCommand;
 import me.internalizable.numdrassl.command.builtin.SessionsCommand;
 import me.internalizable.numdrassl.command.builtin.StopCommand;
 import me.internalizable.numdrassl.event.api.NumdrasslEventManager;
+import me.internalizable.numdrassl.messaging.LocalMessagingService;
+import me.internalizable.numdrassl.messaging.RedisMessagingService;
 import me.internalizable.numdrassl.plugin.bridge.ApiEventBridge;
 import me.internalizable.numdrassl.plugin.loader.NumdrasslPluginManager;
 import me.internalizable.numdrassl.plugin.permission.NumdrasslPermissionManager;
@@ -26,6 +31,8 @@ import me.internalizable.numdrassl.plugin.server.NumdrasslRegisteredServer;
 import me.internalizable.numdrassl.scheduler.NumdrasslScheduler;
 import me.internalizable.numdrassl.server.ProxyCore;
 import me.internalizable.numdrassl.session.ProxySession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
 import java.net.InetSocketAddress;
@@ -48,6 +55,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class NumdrasslProxy implements ProxyServer {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(NumdrasslProxy.class);
     private static final String VERSION = "1.0.0-SNAPSHOT";
 
     // Core reference
@@ -60,6 +68,8 @@ public final class NumdrasslProxy implements ProxyServer {
     private final NumdrasslScheduler scheduler;
     private final NumdrasslPermissionManager permissionManager;
     private final ApiEventBridge eventBridge;
+    private final NumdrasslClusterManager clusterManager;
+    private MessagingService messagingService;
 
     // Server registry
     private final Map<String, NumdrasslRegisteredServer> servers = new ConcurrentHashMap<>();
@@ -80,6 +90,7 @@ public final class NumdrasslProxy implements ProxyServer {
         this.configDirectory = Paths.get("config");
         this.pluginManager = new NumdrasslPluginManager(this, Paths.get("plugins"));
         this.eventBridge = new ApiEventBridge(this);
+        this.clusterManager = new NumdrasslClusterManager(core.getConfig(), core.getSessionManager());
 
         core.getEventManager().registerListener(eventBridge);
         registerConfiguredServers();
@@ -105,9 +116,31 @@ public final class NumdrasslProxy implements ProxyServer {
      * Called by {@link ProxyCore} after networking is ready.
      */
     public void initialize() {
+        initializeMessaging();
         registerBuiltinCommands();
         registerCommandListener();
         loadPlugins();
+    }
+
+    private void initializeMessaging() {
+        var config = core.getConfig();
+
+        if (config.isClusterEnabled()) {
+            try {
+                this.messagingService = new RedisMessagingService(
+                        clusterManager.getLocalProxyId(),
+                        config
+                );
+                clusterManager.initialize(messagingService, eventManager);
+                LOGGER.info("Cluster mode enabled - connected to Redis");
+            } catch (Exception e) {
+                LOGGER.error("Failed to connect to Redis, falling back to local mode", e);
+                this.messagingService = new LocalMessagingService(clusterManager.getLocalProxyId());
+            }
+        } else {
+            this.messagingService = new LocalMessagingService(clusterManager.getLocalProxyId());
+            LOGGER.info("Running in standalone mode (cluster disabled)");
+        }
     }
 
     private void registerBuiltinCommands() {
@@ -136,6 +169,12 @@ public final class NumdrasslProxy implements ProxyServer {
      */
     public void shutdownApi() {
         pluginManager.disablePlugins();
+        clusterManager.shutdown();
+
+        if (messagingService instanceof RedisMessagingService redisService) {
+            redisService.shutdown();
+        }
+
         scheduler.shutdown();
         eventManager.shutdown();
     }
@@ -170,6 +209,23 @@ public final class NumdrasslProxy implements ProxyServer {
     @Nonnull
     public PermissionManager getPermissionManager() {
         return permissionManager;
+    }
+
+    @Override
+    @Nonnull
+    public MessagingService getMessagingService() {
+        return messagingService;
+    }
+
+    @Override
+    @Nonnull
+    public ClusterManager getClusterManager() {
+        return clusterManager;
+    }
+
+    @Override
+    public int getGlobalPlayerCount() {
+        return clusterManager.getGlobalPlayerCount();
     }
 
     // ==================== Player Management ====================

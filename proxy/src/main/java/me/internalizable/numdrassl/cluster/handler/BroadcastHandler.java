@@ -1,0 +1,113 @@
+package me.internalizable.numdrassl.cluster.handler;
+
+import me.internalizable.numdrassl.api.messaging.Channels;
+import me.internalizable.numdrassl.api.messaging.MessagingService;
+import me.internalizable.numdrassl.api.messaging.Subscription;
+import me.internalizable.numdrassl.api.messaging.message.BroadcastMessage;
+import me.internalizable.numdrassl.session.SessionManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.annotation.Nonnull;
+import java.time.Instant;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+
+/**
+ * Handles cluster-wide broadcast messages.
+ *
+ * <p>When a broadcast is received from another proxy, this handler
+ * delivers it to all local players.</p>
+ */
+public final class BroadcastHandler {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(BroadcastHandler.class);
+
+    private final MessagingService messagingService;
+    private final SessionManager sessionManager;
+    private final String localProxyId;
+
+    private Subscription subscription;
+
+    public BroadcastHandler(
+            @Nonnull MessagingService messagingService,
+            @Nonnull SessionManager sessionManager,
+            @Nonnull String localProxyId) {
+        this.messagingService = Objects.requireNonNull(messagingService);
+        this.sessionManager = Objects.requireNonNull(sessionManager);
+        this.localProxyId = Objects.requireNonNull(localProxyId);
+    }
+
+    /**
+     * Start listening for broadcast messages.
+     */
+    public void start() {
+        subscription = messagingService.subscribe(
+                Channels.BROADCAST,
+                BroadcastMessage.class,
+                (channel, message) -> handleBroadcast(message)
+        );
+        LOGGER.info("Broadcast handler started");
+    }
+
+    /**
+     * Stop listening for broadcast messages.
+     */
+    public void stop() {
+        if (subscription != null) {
+            subscription.unsubscribe();
+            subscription = null;
+        }
+        LOGGER.info("Broadcast handler stopped");
+    }
+
+    /**
+     * Send a broadcast to all proxies (including local).
+     *
+     * @param type the broadcast type (e.g., "announcement", "alert")
+     * @param content the broadcast content
+     * @return future that completes when published
+     */
+    public CompletableFuture<Void> broadcast(@Nonnull String type, @Nonnull String content) {
+        BroadcastMessage message = new BroadcastMessage(
+                localProxyId,
+                Instant.now(),
+                type,
+                content
+        );
+        return messagingService.publish(Channels.BROADCAST, message);
+    }
+
+    private void handleBroadcast(BroadcastMessage message) {
+        LOGGER.debug("Received broadcast from {}: [{}] {}",
+                message.sourceProxyId(), message.broadcastType(), message.content());
+
+        switch (message.broadcastType()) {
+            case "announcement" -> deliverToAllPlayers(message.content());
+            case "alert" -> deliverAlert(message.content());
+            case "maintenance" -> handleMaintenance(message.content());
+            default -> LOGGER.debug("Unhandled broadcast type: {}", message.broadcastType());
+        }
+    }
+
+    private void deliverToAllPlayers(String content) {
+        sessionManager.getAllSessions().forEach(session -> {
+            // Send message through the session's packet sender
+            // Note: In the future, this should use the Player API
+            session.sendChatMessage(content);
+        });
+    }
+
+    private void deliverAlert(String content) {
+        // Alerts could be styled differently
+        String alertMessage = "[ALERT] " + content;
+        deliverToAllPlayers(alertMessage);
+    }
+
+    private void handleMaintenance(String content) {
+        LOGGER.warn("Maintenance broadcast: {}", content);
+        String maintenanceMessage = "[MAINTENANCE] " + content;
+        deliverToAllPlayers(maintenanceMessage);
+    }
+}
+

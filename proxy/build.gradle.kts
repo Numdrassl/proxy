@@ -52,6 +52,9 @@ dependencies {
     // Configuration (YAML)
     implementation("org.yaml:snakeyaml:2.2")
 
+    // Redis client (Lettuce - async, Netty-based)
+    implementation("io.lettuce:lettuce-core:6.3.1.RELEASE")
+
     // Logging
     implementation("org.slf4j:slf4j-api:2.0.9")
     implementation("ch.qos.logback:logback-classic:1.4.14")
