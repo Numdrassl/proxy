@@ -26,7 +26,7 @@
  * <h2>Messages</h2>
  * <ul>
  *   <li>{@link me.internalizable.numdrassl.api.messaging.ChannelMessage} - Base interface for all messages</li>
- *   <li>{@link me.internalizable.numdrassl.api.messaging.message} - Concrete message types</li>
+ *   <li>{@code me.internalizable.numdrassl.api.messaging.message} - Concrete message types package</li>
  * </ul>
  *
  * <h2>Annotations</h2>

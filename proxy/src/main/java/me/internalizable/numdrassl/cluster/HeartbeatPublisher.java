@@ -34,7 +34,7 @@ public final class HeartbeatPublisher {
     private final long startTime;
 
     private final ScheduledExecutorService executor;
-    private ScheduledFuture<?> heartbeatTask;
+    private volatile ScheduledFuture<?> heartbeatTask;
 
     public HeartbeatPublisher(
             @Nonnull MessagingService messagingService,
@@ -59,7 +59,7 @@ public final class HeartbeatPublisher {
     /**
      * Start publishing heartbeats.
      */
-    public void start() {
+    public synchronized void start() {
         if (heartbeatTask != null) {
             return;
         }
@@ -81,9 +81,10 @@ public final class HeartbeatPublisher {
     /**
      * Stop publishing heartbeats and send a shutdown notification.
      */
-    public void stop() {
-        if (heartbeatTask != null) {
-            heartbeatTask.cancel(false);
+    public synchronized void stop() {
+        ScheduledFuture<?> task = heartbeatTask;
+        if (task != null) {
+            task.cancel(false);
             heartbeatTask = null;
         }
 

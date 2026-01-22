@@ -236,3 +236,75 @@ jobs:
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           ls -la release/*.jar >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.tag.outputs.tag }}
+      release_type: ${{ steps.release_type.outputs.type }}
+
+  # Publish to Maven Central (only for stable releases)
+  publish-maven:
+    name: Publish to Maven Central
+    needs: release
+    if: needs.release.outputs.release_type == 'stable'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Extract version from tag
+        id: extract_version
+        run: |
+          TAG="${{ needs.release.outputs.tag }}"
+          # Extract semantic version from tag (remove v prefix if present)
+          VERSION="${TAG#v}"
+          # For Hytale format tags, use the project version
+          if [[ "$VERSION" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2} ]]; then
+            VERSION="${{ needs.release.outputs.version }}"
+            # Remove -SNAPSHOT if present for releases
+            VERSION="${VERSION%-SNAPSHOT}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Publishing version: $VERSION"
+
+      - name: Publish to Maven Central
+        run: |
+          ./gradlew :api:publishMavenPublicationToOSSRHRepository \
+            -Pversion=${{ steps.extract_version.outputs.version }} \
+            --no-daemon
+        env:
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+          SIGNING_KEY_ID: ${{ secrets.SIGNING_KEY_ID }}
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        continue-on-error: true  # Don't fail release if Maven Central publish fails
+
+      - name: Maven Central Summary
+        run: |
+          echo "## 📦 Maven Central Publishing" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${{ steps.extract_version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Dependency" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`xml" >> $GITHUB_STEP_SUMMARY
+          echo "<dependency>" >> $GITHUB_STEP_SUMMARY
+          echo "    <groupId>me.internalizable.numdrassl</groupId>" >> $GITHUB_STEP_SUMMARY
+          echo "    <artifactId>numdrassl-api</artifactId>" >> $GITHUB_STEP_SUMMARY
+          echo "    <version>${{ steps.extract_version.outputs.version }}</version>" >> $GITHUB_STEP_SUMMARY
+          echo "</dependency>" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> Note: It may take up to 2 hours for the artifact to appear on Maven Central." >> $GITHUB_STEP_SUMMARY
+

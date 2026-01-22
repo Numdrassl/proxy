@@ -1,7 +1,7 @@
 package me.internalizable.numdrassl.api.player;
 
 import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
-import me.internalizable.numdrassl.api.permission.PermissionSubject;
+import me.internalizable.numdrassl.api.command.CommandSource;
 import me.internalizable.numdrassl.api.server.RegisteredServer;
 
 import javax.annotation.Nonnull;
@@ -14,10 +14,13 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Represents a player connected to the proxy.
  *
- * <p>Players are permission subjects and can be checked for permissions
- * using {@link #hasPermission(String)} or {@link #getPermissionValue(String)}.</p>
+ * <p>Players are command sources and permission subjects, meaning they can execute commands
+ * and be checked for permissions using {@link #hasPermission(String)} or {@link #getPermissionValue(String)}.</p>
+ *
+ * <p>Since {@code Player} extends {@link CommandSource}, players can be used anywhere
+ * a command source is expected.</p>
  */
-public interface Player extends PermissionSubject {
+public interface Player extends CommandSource {
 
     /**
      * Get the player's UUID.
@@ -139,5 +142,23 @@ public interface Player extends PermissionSubject {
      * @return the internal session ID
      */
     long getSessionId();
+
+    /**
+     * Get the player's settings/preferences.
+     *
+     * <p>Settings include locale, client type, and other information
+     * extracted from the Connect packet.</p>
+     *
+     * <p>Example usage:</p>
+     * <pre>{@code
+     * Locale locale = player.getPlayerSettings().getLocale();
+     * String localizedMessage = getTranslation("welcome.message", locale);
+     * player.sendMessage(localizedMessage);
+     * }</pre>
+     *
+     * @return the player's settings
+     */
+    @Nonnull
+    PlayerSettings getPlayerSettings();
 }
 

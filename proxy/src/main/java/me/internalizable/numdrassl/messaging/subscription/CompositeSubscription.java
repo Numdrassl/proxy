@@ -4,7 +4,9 @@ import me.internalizable.numdrassl.api.messaging.channel.MessageChannel;
 import me.internalizable.numdrassl.api.messaging.Subscription;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Subscription that groups multiple subscriptions together.
@@ -19,10 +21,22 @@ import java.util.List;
 public final class CompositeSubscription implements Subscription {
 
     private final List<Subscription> subscriptions;
-    private volatile boolean active = true;
+    private final AtomicBoolean active = new AtomicBoolean(true);
+    private final Runnable cleanupCallback;
 
     public CompositeSubscription(List<Subscription> subscriptions) {
+        this(subscriptions, null);
+    }
+
+    /**
+     * Create a composite subscription with optional cleanup callback.
+     *
+     * @param subscriptions the subscriptions to wrap
+     * @param cleanupCallback called once when unsubscribe() is invoked, may be null
+     */
+    public CompositeSubscription(List<Subscription> subscriptions, @Nullable Runnable cleanupCallback) {
         this.subscriptions = List.copyOf(subscriptions);
+        this.cleanupCallback = cleanupCallback;
     }
 
     /**
@@ -70,13 +84,18 @@ public final class CompositeSubscription implements Subscription {
 
     @Override
     public boolean isActive() {
-        return active && subscriptions.stream().anyMatch(Subscription::isActive);
+        return active.get() && subscriptions.stream().anyMatch(Subscription::isActive);
     }
 
     @Override
     public void unsubscribe() {
-        active = false;
-        subscriptions.forEach(Subscription::unsubscribe);
+        // Ensure idempotent - only run cleanup once
+        if (active.compareAndSet(true, false)) {
+            subscriptions.forEach(Subscription::unsubscribe);
+            if (cleanupCallback != null) {
+                cleanupCallback.run();
+            }
+        }
     }
 
     /**

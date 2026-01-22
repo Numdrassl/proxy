@@ -2,11 +2,13 @@ package me.internalizable.numdrassl.api;
 
 import me.internalizable.numdrassl.api.cluster.ClusterManager;
 import me.internalizable.numdrassl.api.command.CommandManager;
+import me.internalizable.numdrassl.api.command.CommandSource;
 import me.internalizable.numdrassl.api.event.EventManager;
 import me.internalizable.numdrassl.api.messaging.MessagingService;
 import me.internalizable.numdrassl.api.permission.PermissionManager;
 import me.internalizable.numdrassl.api.player.Player;
 import me.internalizable.numdrassl.api.plugin.PluginManager;
+import me.internalizable.numdrassl.api.plugin.messaging.ChannelRegistrar;
 import me.internalizable.numdrassl.api.scheduler.Scheduler;
 import me.internalizable.numdrassl.api.server.RegisteredServer;
 
@@ -62,12 +64,36 @@ public interface ProxyServer {
     CommandManager getCommandManager();
 
     /**
+     * Get the console command source.
+     *
+     * <p>The console command source represents the server console and can be used
+     * to execute commands programmatically or to identify console-originated actions.
+     * It is also a {@link me.internalizable.numdrassl.api.permission.PermissionSubject}
+     * for permission checks.</p>
+     *
+     * @return the console command source
+     */
+    @Nonnull
+    CommandSource getConsoleCommandSource();
+
+    /**
      * Get the plugin manager for managing plugins.
      *
      * @return the plugin manager
      */
     @Nonnull
     PluginManager getPluginManager();
+
+    /**
+     * Get the channel registrar for plugin messaging.
+     *
+     * <p>Plugin message channels allow communication between the proxy and backend servers.
+     * This is used by plugins like LuckPerms to synchronize data.</p>
+     *
+     * @return the channel registrar
+     */
+    @Nonnull
+    ChannelRegistrar getChannelRegistrar();
 
     /**
      * Get the scheduler for scheduling tasks.

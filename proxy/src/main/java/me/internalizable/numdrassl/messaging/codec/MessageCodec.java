@@ -143,6 +143,21 @@ public final class MessageCodec {
     public ChannelMessage decode(@Nonnull String json) {
         try {
             JsonObject wrapper = gson.fromJson(json, JsonObject.class);
+
+            // Guard against malformed messages
+            if (wrapper == null) {
+                LOGGER.warn("Malformed message: null wrapper from JSON: {}", json);
+                return null;
+            }
+            if (!wrapper.has("type") || wrapper.get("type").isJsonNull()) {
+                LOGGER.warn("Malformed message: missing type: {}", json);
+                return null;
+            }
+            if (!wrapper.has("data") || wrapper.get("data").isJsonNull()) {
+                LOGGER.warn("Malformed message: missing data: {}", json);
+                return null;
+            }
+
             String type = wrapper.get("type").getAsString();
             JsonElement data = wrapper.get("data");
 

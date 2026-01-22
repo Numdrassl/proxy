@@ -5,6 +5,7 @@ import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
 import me.internalizable.numdrassl.api.permission.PermissionFunction;
 import me.internalizable.numdrassl.api.permission.Tristate;
 import me.internalizable.numdrassl.api.player.Player;
+import me.internalizable.numdrassl.api.player.PlayerSettings;
 import me.internalizable.numdrassl.api.player.TransferResult;
 import me.internalizable.numdrassl.api.server.RegisteredServer;
 import me.internalizable.numdrassl.plugin.NumdrasslProxy;
@@ -33,6 +34,7 @@ public final class NumdrasslPlayer implements Player {
     private final ProxySession session;
     private final NumdrasslProxy proxy;
     private final AtomicReference<PermissionFunction> permissionFunction;
+    private final PlayerSettings playerSettings;
 
     public NumdrasslPlayer(@Nonnull ProxySession session, @Nonnull NumdrasslProxy proxy) {
         this.session = Objects.requireNonNull(session, "session");
@@ -41,6 +43,8 @@ public final class NumdrasslPlayer implements Player {
         this.permissionFunction = new AtomicReference<>(
             proxy.getPermissionManager().createFunction(this)
         );
+        // Initialize player settings from session identity
+        this.playerSettings = new NumdrasslPlayerSettings(session.getIdentity());
     }
 
     // ==================== Identity ====================
@@ -74,6 +78,12 @@ public final class NumdrasslPlayer implements Player {
     @Override
     public long getSessionId() {
         return session.getSessionId();
+    }
+
+    @Override
+    @Nonnull
+    public PlayerSettings getPlayerSettings() {
+        return playerSettings;
     }
 
     // ==================== Connection State ====================

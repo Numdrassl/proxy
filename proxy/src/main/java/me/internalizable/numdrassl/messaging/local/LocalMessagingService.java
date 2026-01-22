@@ -51,7 +51,9 @@ public final class LocalMessagingService implements MessagingService {
         List<SubscriptionEntry> handlers = subscriptions.get(channel);
         if (handlers != null) {
             for (SubscriptionEntry entry : handlers) {
-                if (entry.isIncludeSelf() || !message.sourceProxyId().equals(localProxyId)) {
+                // In local mode, always deliver messages since there's only one proxy
+                // The includeSelf flag is more relevant for cluster mode
+                if (entry.isIncludeSelf() || !message.sourceProxyId().equals(localProxyId) || isLocalMode()) {
                     try {
                         deliverMessage(entry, channel, message);
                     } catch (Exception e) {
@@ -61,6 +63,13 @@ public final class LocalMessagingService implements MessagingService {
             }
         }
         return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Returns true since this is a local-only messaging service.
+     */
+    private boolean isLocalMode() {
+        return true;
     }
 
     @Override

@@ -300,6 +300,14 @@ public final class NumdrasslPluginManager implements PluginManager {
 
     @Override
     @Nonnull
+    public Optional<PluginContainer> fromInstance(@Nonnull Object instance) {
+        Objects.requireNonNull(instance, "instance");
+        NumdrasslPluginContainer container = findContainerByInstance(instance);
+        return Optional.ofNullable(container);
+    }
+
+    @Override
+    @Nonnull
     public Collection<PluginContainer> getPlugins() {
         return Collections.unmodifiableCollection(plugins.values());
     }
@@ -320,6 +328,50 @@ public final class NumdrasslPluginManager implements PluginManager {
     public void addPluginPath(@Nonnull Path path) {
         Objects.requireNonNull(path, "path");
         additionalPaths.add(path);
+    }
+
+    @Override
+    public void addToClasspath(@Nonnull Object plugin, @Nonnull Path file) {
+        Objects.requireNonNull(plugin, "plugin");
+        Objects.requireNonNull(file, "file");
+
+        // Find the plugin container for this plugin instance
+        NumdrasslPluginContainer container = findContainerByInstance(plugin);
+        if (container == null) {
+            LOGGER.warn("Cannot add to classpath: plugin instance not found");
+            return;
+        }
+
+        // Get the plugin's classloader
+        URLClassLoader classLoader = container.getClassLoader();
+        if (classLoader == null) {
+            LOGGER.warn("Cannot add to classpath: plugin {} has no classloader",
+                container.getDescription().getId());
+            return;
+        }
+
+        try {
+            // Use reflection to call addURL on the URLClassLoader
+            java.lang.reflect.Method addUrlMethod = URLClassLoader.class.getDeclaredMethod("addURL", URL.class);
+            addUrlMethod.setAccessible(true);
+            addUrlMethod.invoke(classLoader, file.toUri().toURL());
+            LOGGER.debug("Added {} to classpath for plugin {}", file, container.getDescription().getId());
+        } catch (Exception e) {
+            LOGGER.error("Failed to add {} to classpath for plugin {}",
+                file, container.getDescription().getId(), e);
+        }
+    }
+
+    /**
+     * Find the plugin container by its instance.
+     */
+    private NumdrasslPluginContainer findContainerByInstance(Object instance) {
+        for (NumdrasslPluginContainer container : plugins.values()) {
+            if (container.getInstance().map(i -> i == instance).orElse(false)) {
+                return container;
+            }
+        }
+        return null;
     }
 }
 

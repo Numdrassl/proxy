@@ -3,6 +3,7 @@ package me.internalizable.numdrassl.api.messaging.channel;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -169,7 +170,7 @@ public final class Channels {
      */
     @Nonnull
     public static Collection<MessageChannel> all() {
-        return REGISTRY.values();
+        return Collections.unmodifiableCollection(REGISTRY.values());
     }
 
     /**

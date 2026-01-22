@@ -3,6 +3,7 @@ package me.internalizable.numdrassl.api.messaging.channel;
 import me.internalizable.numdrassl.api.messaging.message.*;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 
 /**
  * Predefined system channels for cross-proxy messaging.
@@ -90,13 +91,21 @@ public enum SystemChannel {
     /**
      * Get the corresponding MessageChannel instance.
      *
-     * @return the MessageChannel, or null for NONE
+     * <p>For {@link #NONE}, this method returns {@code null}.</p>
+     *
+     * <p>For all other system channels, this method is guaranteed to return
+     * a non-null {@link MessageChannel} because system channels are pre-registered
+     * in {@link Channels} during class initialization.</p>
+     *
+     * @return the MessageChannel, or null if this is {@link #NONE}
      */
+    @Nullable
     public MessageChannel toMessageChannel() {
         if (this == NONE) {
             return null;
         }
-        return Channels.get(channelId);
+        // System channels are always pre-registered, use getOrRegister for safety
+        return Channels.getOrRegister(channelId);
     }
 }
 

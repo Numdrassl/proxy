@@ -1,7 +1,5 @@
 package me.internalizable.numdrassl.api.permission;
 
-import me.internalizable.numdrassl.api.player.Player;
-
 import javax.annotation.Nonnull;
 
 /**
@@ -14,7 +12,12 @@ import javax.annotation.Nonnull;
  * <pre>{@code
  * public class LuckPermsProvider implements PermissionProvider {
  *     @Override
- *     public PermissionFunction createFunction(Player player) {
+ *     public PermissionFunction createFunction(PermissionSubject subject) {
+ *         if (!(subject instanceof Player player)) {
+ *             // Return a default function for non-player subjects (e.g., console)
+ *             return PermissionFunction.ALWAYS_TRUE;
+ *         }
+ *
  *         User user = luckPerms.getUserManager().getUser(player.getUniqueId());
  *         return permission -> {
  *             if (user == null) return Tristate.UNDEFINED;
@@ -28,28 +31,45 @@ import javax.annotation.Nonnull;
  * Numdrassl.getProxy().getPermissionManager().setProvider(new LuckPermsProvider());
  * }</pre>
  *
+ * <h2>Subject Types</h2>
+ * <p>The subject passed to {@link #createFunction(PermissionSubject)} can be:</p>
+ * <ul>
+ *   <li>{@link me.internalizable.numdrassl.api.player.Player} - a connected player</li>
+ *   <li>Console command source - the server console</li>
+ * </ul>
+ *
  * <h2>Lifecycle</h2>
- * <p>The {@link #createFunction(Player)} method is called when a player
- * connects to create their permission function. The function may be
- * cached and reused for the duration of the session.</p>
+ * <p>The {@link #createFunction(PermissionSubject)} method is called when a subject
+ * needs permissions set up. For players, this happens during connection. The function
+ * may be cached and reused for the duration of the session.</p>
  *
  * @see PermissionManager
  * @see PermissionFunction
+ * @see PermissionSubject
  */
 public interface PermissionProvider {
 
     /**
-     * Creates a permission function for the given player.
+     * Creates a permission function for the given subject.
      *
-     * <p>This method is called when a player connects to create their
-     * permission checking function. The returned function will be used
-     * for all permission checks for this player.</p>
+     * <p>This method is called when a subject's permissions need to be set up.
+     * The returned function will be used for all permission checks for this subject.</p>
      *
-     * @param player the player to create a function for
-     * @return the permission function for this player
+     * <p>Implementations should handle both player and non-player subjects appropriately.
+     * Use {@code instanceof} to distinguish between subject types:</p>
+     * <pre>{@code
+     * if (subject instanceof Player player) {
+     *     // Player-specific logic
+     * } else {
+     *     // Console or other subject types
+     * }
+     * }</pre>
+     *
+     * @param subject the permission subject to create a function for
+     * @return the permission function for this subject
      */
     @Nonnull
-    PermissionFunction createFunction(@Nonnull Player player);
+    PermissionFunction createFunction(@Nonnull PermissionSubject subject);
 
     /**
      * Called when this provider is registered.
@@ -69,4 +89,3 @@ public interface PermissionProvider {
     default void onUnregister() {
     }
 }
-

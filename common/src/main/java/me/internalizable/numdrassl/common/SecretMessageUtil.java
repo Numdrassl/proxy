@@ -232,8 +232,12 @@ public class SecretMessageUtil {
 
     /**
      * Calculate HMAC-SHA256.
+     *
+     * @param data the data to sign
+     * @param secret the shared secret
+     * @return the HMAC signature
      */
-    private static byte[] calculateHmac(byte[] data, byte[] secret) {
+    public static byte[] calculateHmac(byte[] data, byte[] secret) {
         try {
             Mac mac = Mac.getInstance(HMAC_ALGORITHM);
             SecretKeySpec keySpec = new SecretKeySpec(secret, HMAC_ALGORITHM);

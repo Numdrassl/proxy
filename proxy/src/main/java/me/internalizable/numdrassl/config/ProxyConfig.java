@@ -1,21 +1,14 @@
 package me.internalizable.numdrassl.config;
 
-import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
-import org.yaml.snakeyaml.introspector.Property;
-import org.yaml.snakeyaml.nodes.NodeTuple;
-import org.yaml.snakeyaml.nodes.Tag;
-import org.yaml.snakeyaml.representer.Representer;
 
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Configuration for the Numdrassl Proxy.
@@ -80,72 +73,92 @@ public class ProxyConfig {
     public void save(Path path) throws IOException {
         Files.createDirectories(path.getParent());
 
-        DumperOptions dumperOptions = new DumperOptions();
-        dumperOptions.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
-        dumperOptions.setPrettyFlow(true);
-        dumperOptions.setIndent(2);
-        dumperOptions.setIndicatorIndent(2);
-        dumperOptions.setIndentWithIndicator(true);
-
-        Representer representer = new Representer(dumperOptions) {
-            @Override
-            protected NodeTuple representJavaBeanProperty(Object javaBean, Property property,
-                                                          Object propertyValue, Tag customTag) {
-                if (propertyValue == null) {
-                    return null;
-                }
-                return super.representJavaBeanProperty(javaBean, property, propertyValue, customTag);
-            }
-
-            @Override
-            protected Set<Property> getProperties(Class<?> type) {
-                Set<Property> props = super.getProperties(type);
-                if (type == ProxyConfig.class) {
-                    return orderProperties(props,
-                        "bindAddress", "bindPort", "publicAddress", "publicPort",
-                        "certificatePath", "privateKeyPath",
-                        "maxConnections", "connectionTimeoutSeconds",
-                        "debugMode", "passthroughMode", "proxySecret",
-                        "backends",
-                        "clusterEnabled", "proxyId", "proxyRegion",
-                        "redisHost", "redisPort", "redisPassword", "redisSsl", "redisDatabase"
-                    );
-                }
-                if (type == BackendServer.class) {
-                    return orderProperties(props, "name", "host", "port", "defaultServer");
-                }
-                return props;
-            }
-
-            private Set<Property> orderProperties(Set<Property> props, String... order) {
-                Set<Property> ordered = new LinkedHashSet<>();
-                for (String name : order) {
-                    for (Property p : props) {
-                        if (p.getName().equals(name)) {
-                            ordered.add(p);
-                            break;
-                        }
-                    }
-                }
-                for (Property p : props) {
-                    if (!ordered.contains(p)) {
-                        ordered.add(p);
-                    }
-                }
-                return ordered;
-            }
-        };
-
-        representer.addClassTag(ProxyConfig.class, Tag.MAP);
-        representer.addClassTag(BackendServer.class, Tag.MAP);
-
-        Yaml yaml = new Yaml(representer, dumperOptions);
-
         try (Writer writer = Files.newBufferedWriter(path)) {
             writer.write("# Numdrassl Proxy Configuration\n");
             writer.write("# https://github.com/Numdrassl/proxy\n\n");
-            yaml.dump(this, writer);
+
+            // Network configuration
+            writer.write("# ==================== Network Configuration ====================\n\n");
+            writer.write("# Address to bind the proxy server to\n");
+            writer.write("bindAddress: \"" + bindAddress + "\"\n");
+            writer.write("# Port to listen on\n");
+            writer.write("bindPort: " + bindPort + "\n\n");
+
+            writer.write("# Public address for player transfers (sent in ClientReferral packets)\n");
+            writer.write("# Set this to your server's public domain/IP if behind NAT\n");
+            writer.write("publicAddress: " + formatValue(publicAddress) + "\n");
+            writer.write("publicPort: " + publicPort + "\n\n");
+
+            // TLS configuration
+            writer.write("# ==================== TLS Configuration ====================\n\n");
+            writer.write("# TLS certificates (auto-generated if missing)\n");
+            writer.write("certificatePath: \"" + certificatePath + "\"\n");
+            writer.write("privateKeyPath: \"" + privateKeyPath + "\"\n\n");
+
+            // Connection limits
+            writer.write("# ==================== Connection Limits ====================\n\n");
+            writer.write("# Maximum concurrent connections\n");
+            writer.write("maxConnections: " + maxConnections + "\n");
+            writer.write("# Connection timeout in seconds\n");
+            writer.write("connectionTimeoutSeconds: " + connectionTimeoutSeconds + "\n\n");
+
+            // Debug options
+            writer.write("# ==================== Debug Options ====================\n\n");
+            writer.write("# Enable verbose logging for debugging\n");
+            writer.write("debugMode: " + debugMode + "\n");
+            writer.write("# Passthrough mode (forward packets without inspection)\n");
+            writer.write("passthroughMode: " + passthroughMode + "\n\n");
+
+            // Backend authentication
+            writer.write("# ==================== Backend Authentication ====================\n\n");
+            writer.write("# Shared secret for backend authentication (HMAC signing)\n");
+            writer.write("# Must match the secret in your Bridge plugin config\n");
+            writer.write("# If null, a random secret is generated on first run\n");
+            writer.write("proxySecret: " + formatValue(proxySecret) + "\n\n");
+
+            // Backend servers
+            writer.write("# ==================== Backend Servers ====================\n\n");
+            writer.write("# List of backend servers players can connect to\n");
+            writer.write("backends:\n");
+            for (BackendServer backend : backends) {
+                writer.write("  - name: \"" + backend.getName() + "\"\n");
+                writer.write("    host: \"" + backend.getHost() + "\"\n");
+                writer.write("    port: " + backend.getPort() + "\n");
+                writer.write("    defaultServer: " + backend.isDefaultServer() + "\n");
+            }
+            writer.write("\n");
+
+            // Cluster configuration
+            writer.write("# ==================== Cluster Configuration ====================\n\n");
+            writer.write("# Enable cluster mode for multi-proxy deployments\n");
+            writer.write("# Requires Redis for cross-proxy communication\n");
+            writer.write("clusterEnabled: " + clusterEnabled + "\n\n");
+
+            writer.write("# Unique identifier for this proxy instance (auto-generated if null)\n");
+            writer.write("proxyId: " + formatValue(proxyId) + "\n");
+            writer.write("# Region identifier for load balancing (e.g., \"eu-west\", \"us-east\")\n");
+            writer.write("proxyRegion: \"" + proxyRegion + "\"\n\n");
+
+            // Redis configuration
+            writer.write("# ==================== Redis Configuration ====================\n\n");
+            writer.write("# Redis connection settings (only used when clusterEnabled: true)\n");
+            writer.write("redisHost: \"" + redisHost + "\"\n");
+            writer.write("redisPort: " + redisPort + "\n");
+            writer.write("# Redis password (null if no authentication required)\n");
+            writer.write("redisPassword: " + formatValue(redisPassword) + "\n");
+            writer.write("# Enable SSL/TLS for Redis connection\n");
+            writer.write("redisSsl: " + redisSsl + "\n");
+            writer.write("# Redis database index (0-15)\n");
+            writer.write("redisDatabase: " + redisDatabase + "\n");
         }
+    }
+
+    /**
+     * Formats a value for YAML output.
+     * Returns "null" for null values, or quoted string otherwise.
+     */
+    private String formatValue(String value) {
+        return value == null ? "null" : "\"" + value + "\"";
     }
 
     // ==================== Network Getters/Setters ====================

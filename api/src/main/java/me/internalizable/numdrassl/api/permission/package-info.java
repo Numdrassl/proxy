@@ -34,7 +34,12 @@
  * <pre>{@code
  * public class MyPermissionProvider implements PermissionProvider {
  *     @Override
- *     public PermissionFunction createFunction(Player player) {
+ *     public PermissionFunction createFunction(PermissionSubject subject) {
+ *         // Handle non-player subjects (like console)
+ *         if (!(subject instanceof Player player)) {
+ *             return PermissionFunction.ALWAYS_TRUE;
+ *         }
+ *
  *         return permission -> {
  *             // Look up permission in your system
  *             Boolean result = myPermissionSystem.check(player.getUniqueId(), permission);

@@ -4,6 +4,7 @@ import me.internalizable.numdrassl.api.messaging.channel.MessageChannel;
 import me.internalizable.numdrassl.api.messaging.Subscription;
 
 import javax.annotation.Nonnull;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -17,6 +18,7 @@ public final class RedisSubscription implements Subscription {
     private final SubscriptionEntry entry;
     private final BooleanSupplier connectionChecker;
     private final Consumer<SubscriptionEntry> removeCallback;
+    private final AtomicBoolean cancelled = new AtomicBoolean(false);
 
     /**
      * Create a new Redis subscription.
@@ -42,13 +44,16 @@ public final class RedisSubscription implements Subscription {
 
     @Override
     public boolean isActive() {
-        return entry.isActive() && connectionChecker.getAsBoolean();
+        return !cancelled.get() && entry.isActive() && connectionChecker.getAsBoolean();
     }
 
     @Override
     public void unsubscribe() {
-        entry.setActive(false);
-        removeCallback.accept(entry);
+        // Ensure unsubscribe is idempotent - only invoke callback once
+        if (cancelled.compareAndSet(false, true)) {
+            entry.setActive(false);
+            removeCallback.accept(entry);
+        }
     }
 }
 

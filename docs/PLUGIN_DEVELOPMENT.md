@@ -556,131 +556,6 @@ public void onChat(PlayerChatEvent event) {
 }
 ```
 
----
-
-## Cross-Proxy Messaging
-
-Numdrassl supports Redis-based pub/sub messaging for communication between proxy instances in a cluster.
-
-### Subscribing with Annotations
-
-The simplest way to receive messages is using the `@Subscribe` annotation:
-
-```java
-import me.internalizable.numdrassl.api.messaging.Subscribe;
-import me.internalizable.numdrassl.api.messaging.SystemChannel;
-import me.internalizable.numdrassl.api.messaging.message.HeartbeatMessage;
-import me.internalizable.numdrassl.api.messaging.message.ChatMessage;
-
-@Plugin(id = "my-plugin", name = "My Plugin", version = "1.0.0")
-public class MyPlugin {
-
-    // Subscribe to system channels
-    @Subscribe(SystemChannel.HEARTBEAT)
-    public void onHeartbeat(HeartbeatMessage message) {
-        LOGGER.info("Proxy {} is alive with {} players", 
-            message.sourceProxyId(), message.playerCount());
-    }
-
-    @Subscribe(SystemChannel.CHAT)
-    public void onChat(ChatMessage message) {
-        if (message.isBroadcast()) {
-            // Handle broadcast chat
-        }
-    }
-
-    // Subscribe to custom plugin channels - plugin ID is inferred from @Plugin
-    @Subscribe(channel = "scores")
-    public void onScoreUpdate(ScoreData data) {
-        LOGGER.info("Player {} scored {}", data.playerName(), data.score());
-    }
-
-    // Include source proxy ID in handler
-    @Subscribe(channel = "events")
-    public void onGameEvent(String sourceProxyId, GameEvent event) {
-        LOGGER.info("Received {} from proxy {}", event, sourceProxyId);
-    }
-}
-
-// Register the listener
-proxy.getMessagingService().registerListener(myPlugin);
-```
-
-### Separate Listener Classes
-
-If your listener is a separate class, pass the plugin as context:
-
-```java
-// Listener in separate file (no @Plugin annotation)
-public class MyMessageListener {
-    @Subscribe(channel = "scores")
-    public void onScore(ScoreData data) {
-        // Handle score update
-    }
-}
-
-// In your plugin
-@Plugin(id = "my-plugin", ...)
-public class MyPlugin {
-    public void onEnable() {
-        proxy.getMessagingService().registerListener(new MyMessageListener(), this);
-    }
-}
-```
-
-### Publishing Messages
-
-```java
-MessagingService messaging = proxy.getMessagingService();
-
-// Publish custom plugin data
-messaging.publishPlugin("my-plugin", "scores", new ScoreData("Steve", 100));
-
-// Publish system messages
-BroadcastMessage broadcast = new BroadcastMessage(
-    proxyId, Instant.now(),
-    "announcement",
-    "Server restarting in 5 minutes!"
-);
-messaging.publish(Channels.BROADCAST, broadcast);
-```
-
-### Programmatic API
-
-```java
-// Subscribe to system messages
-messaging.subscribe(Channels.HEARTBEAT, HeartbeatMessage.class,
-    (channel, msg) -> LOGGER.info("Proxy {} alive", msg.sourceProxyId()));
-
-// Subscribe to plugin messages with type safety
-messaging.subscribePlugin("my-plugin", "scores", ScoreData.class,
-    (sourceProxyId, data) -> handleScore(data));
-```
-
-### Custom Type Adapters
-
-Register custom serialization for complex types:
-
-```java
-messaging.registerTypeAdapter(new TypeAdapter<Location>() {
-    @Override
-    public Class<Location> getType() { return Location.class; }
-
-    @Override
-    public String serialize(Location loc) {
-        return loc.world() + ":" + loc.x() + ":" + loc.y() + ":" + loc.z();
-    }
-
-    @Override
-    public Location deserialize(String json) {
-        String[] parts = json.split(":");
-        return new Location(parts[0], 
-            Double.parseDouble(parts[1]),
-            Double.parseDouble(parts[2]),
-            Double.parseDouble(parts[3]));
-    }
-});
-```
 ### 3. Unregister on Disable
 
 ```java
@@ -755,17 +630,25 @@ messaging.publishPlugin("my-plugin", "events", new MyEventData("something happen
 ### Annotation-Based API
 
 ```java
-import me.internalizable.numdrassl.api.messaging.annotation.MessageSubscribe;
+import me.internalizable.numdrassl.api.event.Subscribe;  // For local events
+import me.internalizable.numdrassl.api.event.proxy.ProxyInitializeEvent;
+import me.internalizable.numdrassl.api.messaging.annotation.MessageSubscribe;  // For cross-proxy messages
 import me.internalizable.numdrassl.api.messaging.channel.SystemChannel;
 import me.internalizable.numdrassl.api.messaging.message.ChatMessage;
+import me.internalizable.numdrassl.api.messaging.message.HeartbeatMessage;
+import me.internalizable.numdrassl.api.plugin.Inject;
+import me.internalizable.numdrassl.api.plugin.Plugin;
 
 @Plugin(id = "my-plugin", name = "My Plugin", version = "1.0.0")
 public class MyPlugin {
 
-    @Subscribe  // Local event
+    @Inject
+    private MessagingService messaging;
+
+    @Subscribe  // Local event - registers message listeners on proxy init
     public void onInit(ProxyInitializeEvent event) {
         // Register this class for @MessageSubscribe methods
-        Numdrassl.getProxy().getMessagingService().registerListener(this);
+        messaging.registerListener(this);
     }
 
     // Cross-proxy chat (from other proxies)

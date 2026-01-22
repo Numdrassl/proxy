@@ -2,6 +2,7 @@ package me.internalizable.numdrassl.plugin.permission;
 
 import me.internalizable.numdrassl.api.permission.PermissionFunction;
 import me.internalizable.numdrassl.api.permission.PermissionProvider;
+import me.internalizable.numdrassl.api.permission.PermissionSubject;
 import me.internalizable.numdrassl.api.permission.Tristate;
 import me.internalizable.numdrassl.api.player.Player;
 import org.slf4j.Logger;
@@ -119,8 +120,15 @@ public final class FilePermissionProvider implements PermissionProvider {
 
     @Override
     @Nonnull
-    public PermissionFunction createFunction(@Nonnull Player player) {
-        Objects.requireNonNull(player, "player");
+    public PermissionFunction createFunction(@Nonnull PermissionSubject subject) {
+        Objects.requireNonNull(subject, "subject");
+
+        // Only handle Player subjects - console gets default permissions
+        if (!(subject instanceof Player player)) {
+            // For non-player subjects (like console), return a function that grants all permissions
+            return PermissionFunction.ALWAYS_TRUE;
+        }
+
         UUID uuid = player.getUniqueId();
 
         // Load player permissions if not cached

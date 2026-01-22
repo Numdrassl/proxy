@@ -207,13 +207,17 @@ public final class NumdrasslClusterManager implements ClusterManager {
     @Override
     @Nonnull
     public Optional<String> findPlayerProxy(@Nonnull UUID playerUuid) {
-        // First check local
+        // First check local sessions
         if (sessionManager.findByUuid(playerUuid).isPresent()) {
             return Optional.of(proxyId);
         }
 
-        // TODO: In a full implementation, we'd need to track player locations
-        // via Redis or another shared store. For now, return empty.
+        // TODO: Implement cross-cluster player lookup via Redis
+        // This requires a shared player-location store that tracks:
+        // - Player UUID -> ProxyId mapping
+        // - Updated on player connect/disconnect
+        // - Query Redis for: GET "numdrassl:player:<uuid>"
+        // For now, remote players are not visible in findPlayerProxy
         return Optional.empty();
     }
 

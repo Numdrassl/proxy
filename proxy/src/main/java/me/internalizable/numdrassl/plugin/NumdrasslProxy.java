@@ -4,15 +4,18 @@ import me.internalizable.numdrassl.api.Numdrassl;
 import me.internalizable.numdrassl.api.ProxyServer;
 import me.internalizable.numdrassl.api.cluster.ClusterManager;
 import me.internalizable.numdrassl.api.command.CommandManager;
+import me.internalizable.numdrassl.api.command.CommandSource;
 import me.internalizable.numdrassl.api.event.EventManager;
 import me.internalizable.numdrassl.api.messaging.MessagingService;
 import me.internalizable.numdrassl.api.permission.PermissionManager;
 import me.internalizable.numdrassl.api.player.Player;
 import me.internalizable.numdrassl.api.plugin.PluginManager;
+import me.internalizable.numdrassl.api.plugin.messaging.ChannelRegistrar;
 import me.internalizable.numdrassl.api.scheduler.Scheduler;
 import me.internalizable.numdrassl.api.server.RegisteredServer;
 import me.internalizable.numdrassl.cluster.NumdrasslClusterManager;
 import me.internalizable.numdrassl.command.CommandEventListener;
+import me.internalizable.numdrassl.command.ConsoleCommandSource;
 import me.internalizable.numdrassl.command.NumdrasslCommandManager;
 import me.internalizable.numdrassl.command.builtin.AuthCommand;
 import me.internalizable.numdrassl.command.builtin.HelpCommand;
@@ -25,6 +28,8 @@ import me.internalizable.numdrassl.messaging.local.LocalMessagingService;
 import me.internalizable.numdrassl.messaging.redis.RedisMessagingService;
 import me.internalizable.numdrassl.plugin.bridge.ApiEventBridge;
 import me.internalizable.numdrassl.plugin.loader.NumdrasslPluginManager;
+import me.internalizable.numdrassl.plugin.messaging.BackendControlManager;
+import me.internalizable.numdrassl.plugin.messaging.NumdrasslChannelRegistrar;
 import me.internalizable.numdrassl.plugin.permission.NumdrasslPermissionManager;
 import me.internalizable.numdrassl.plugin.player.NumdrasslPlayer;
 import me.internalizable.numdrassl.plugin.server.NumdrasslRegisteredServer;
@@ -67,6 +72,8 @@ public final class NumdrasslProxy implements ProxyServer {
     private final NumdrasslPluginManager pluginManager;
     private final NumdrasslScheduler scheduler;
     private final NumdrasslPermissionManager permissionManager;
+    private final NumdrasslChannelRegistrar channelRegistrar;
+    private final BackendControlManager controlManager;
     private final ApiEventBridge eventBridge;
     private final NumdrasslClusterManager clusterManager;
     private MessagingService messagingService;
@@ -86,11 +93,13 @@ public final class NumdrasslProxy implements ProxyServer {
         this.commandManager = new NumdrasslCommandManager();
         this.scheduler = new NumdrasslScheduler();
         this.permissionManager = new NumdrasslPermissionManager();
+        this.channelRegistrar = new NumdrasslChannelRegistrar();
         this.dataDirectory = Paths.get("data");
         this.configDirectory = Paths.get("config");
         this.pluginManager = new NumdrasslPluginManager(this, Paths.get("plugins"));
         this.eventBridge = new ApiEventBridge(this);
         this.clusterManager = new NumdrasslClusterManager(core.getConfig(), core.getSessionManager());
+        this.controlManager = new BackendControlManager(core.getConfig(), this, eventManager, channelRegistrar);
 
         core.getEventManager().registerListener(eventBridge);
         registerConfiguredServers();
@@ -105,6 +114,7 @@ public final class NumdrasslProxy implements ProxyServer {
             InetSocketAddress address = new InetSocketAddress(backend.getHost(), backend.getPort());
             NumdrasslRegisteredServer server = new NumdrasslRegisteredServer(backend.getName(), address);
             server.setDefault(backend.isDefaultServer());
+            server.setControlManager(controlManager);
             servers.put(backend.getName().toLowerCase(), server);
         }
     }
@@ -117,9 +127,21 @@ public final class NumdrasslProxy implements ProxyServer {
      */
     public void initialize() {
         initializeMessaging();
+        initializeControlConnections();
         registerBuiltinCommands();
         registerCommandListener();
         loadPlugins();
+    }
+
+    private void initializeControlConnections() {
+        var config = core.getConfig();
+
+        // Initialize SSL context for control connections
+        controlManager.initSslContext(config.getCertificatePath(), config.getPrivateKeyPath());
+
+        // Start control connections to all backends
+        controlManager.start();
+        LOGGER.info("Backend control connections initialized");
     }
 
     private void initializeMessaging() {
@@ -173,6 +195,7 @@ public final class NumdrasslProxy implements ProxyServer {
      */
     public void shutdownApi() {
         pluginManager.disablePlugins();
+        controlManager.stop();
         clusterManager.shutdown();
 
         if (messagingService instanceof RedisMessagingService redisService) {
@@ -199,8 +222,20 @@ public final class NumdrasslProxy implements ProxyServer {
 
     @Override
     @Nonnull
+    public CommandSource getConsoleCommandSource() {
+        return ConsoleCommandSource.getInstance();
+    }
+
+    @Override
+    @Nonnull
     public PluginManager getPluginManager() {
         return pluginManager;
+    }
+
+    @Override
+    @Nonnull
+    public ChannelRegistrar getChannelRegistrar() {
+        return channelRegistrar;
     }
 
     @Override
@@ -218,6 +253,9 @@ public final class NumdrasslProxy implements ProxyServer {
     @Override
     @Nonnull
     public MessagingService getMessagingService() {
+        if (messagingService == null) {
+            throw new IllegalStateException("MessagingService not initialized; call initialize() first");
+        }
         return messagingService;
     }
 

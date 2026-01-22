@@ -237,68 +237,107 @@ Point your Hytale client to `localhost:45585` (or your configured address).
 ### Proxy Configuration (`config/proxy.yml`)
 
 ```yaml
-# Network binding
+# Numdrassl Proxy Configuration
+# https://github.com/Numdrassl/proxy
+
+# ==================== Network Configuration ====================
+
+# Address to bind the proxy server to
 bindAddress: "0.0.0.0"
+# Port to listen on
 bindPort: 45585
 
-# Public address for player transfers (optional)
-# If set, this address is sent in ClientReferral packets
+# Public address for player transfers (sent in ClientReferral packets)
+# Set this to your server's public domain/IP if behind NAT
 publicAddress: "play.myserver.com"
 publicPort: 45585
+
+# ==================== TLS Configuration ====================
 
 # TLS certificates (auto-generated if missing)
 certificatePath: "certs/server.crt"
 privateKeyPath: "certs/server.key"
 
-# Connection limits
+# ==================== Connection Limits ====================
+
+# Maximum concurrent connections
 maxConnections: 1000
+# Connection timeout in seconds
 connectionTimeoutSeconds: 30
 
-# Debugging
+# ==================== Debug Options ====================
+
+# Enable verbose logging for debugging
 debugMode: false
+# Passthrough mode (forward packets without inspection)
 passthroughMode: false
 
-# Shared secret for backend authentication
+# ==================== Backend Authentication ====================
+
+# Shared secret for backend authentication (HMAC signing)
 # Must match the secret in your Bridge plugin config
 # If null, a random secret is generated on first run
 proxySecret: "your-shared-secret-here"
 
-# Backend servers
+# ==================== Backend Servers ====================
+
+# List of backend servers players can connect to
 backends:
   - name: "lobby"
     host: "127.0.0.1"
     port: 5520
     defaultServer: true
-    
   - name: "game1"
     host: "192.168.1.100"
     port: 5520
     defaultServer: false
+
+# ==================== Cluster Configuration ====================
+
+# Enable cluster mode for multi-proxy deployments
+# Requires Redis for cross-proxy communication
+clusterEnabled: false
+
+# Unique identifier for this proxy instance (auto-generated if null)
+proxyId: null
+# Region identifier for load balancing (e.g., "eu-west", "us-east")
+proxyRegion: "default"
+
+# ==================== Redis Configuration ====================
+
+# Redis connection settings (only used when clusterEnabled: true)
+# SECURITY WARNING: When using Redis in production:
+# 1. Always set a strong redisPassword
+# 2. Enable redisSsl for encrypted connections
+# 3. Use VPC/firewall rules to restrict Redis access
+# 4. Never expose Redis to the public internet
+redisHost: "localhost"
+redisPort: 6379
+# Redis password - ALWAYS SET THIS IN PRODUCTION
+redisPassword: null
+# Enable SSL/TLS for Redis connection - RECOMMENDED for production
+redisSsl: false
+# Redis database index (0-15)
+redisDatabase: 0
 ```
 
 ### Backend Configuration
 
 Each backend server requires the Bridge plugin with matching `proxySecret`.
 
-### Cluster Configuration (Optional)
+### Cluster Configuration Notes
 
-For multi-proxy deployments across regions, Numdrassl supports Redis-based clustering:
-
-```yaml
-# Enable cluster mode
-clusterEnabled: true
-
-# Redis connection settings
-redisHost: "localhost"
-redisPort: 6379
-redisPassword: null      # Set if Redis requires auth
-redisSsl: false
-redisDatabase: 0
-
-# Proxy identity (auto-generated if null)
-proxyId: "proxy-eu-1"
-proxyRegion: "eu-west"
-```
+> ⚠️ **Important Security Warnings:**
+> 
+> - **Public Address**: When running multiple proxies, `publicAddress` must be set to a routable IP/hostname that other proxies and clients can reach. Using `0.0.0.0` as `publicAddress` will not work for inter-proxy communication. Set it to your server's actual public IP or DNS name.
+> 
+> - **Redis Security**: 
+>   - Always set `redisPassword` in production environments
+>   - Enable `redisSsl: true` for encrypted connections
+>   - Use VPC/security groups to restrict Redis access
+>   - Never expose Redis directly to the public internet
+> 
+> - **Proxy Identity**: Set unique `proxyId` values for each proxy (e.g., "proxy-eu-1", "proxy-us-1") to avoid conflicts. If left null, a UUID is auto-generated.
 
 **Cluster Features:**
 - **Global Player Count**: `proxy.getGlobalPlayerCount()` returns players across all proxies
@@ -380,7 +419,19 @@ Plugins allow you to extend the proxy with custom functionality.
 
 ### Dependency Setup
 
-**build.gradle.kts:**
+#### Maven
+
+```xml
+<dependency>
+    <groupId>me.internalizable.numdrassl</groupId>
+    <artifactId>numdrassl-api</artifactId>
+    <version>1.0.0</version>
+    <scope>provided</scope>
+</dependency>
+```
+
+#### Gradle (Kotlin DSL)
+
 ```kotlin
 plugins {
     java
@@ -388,12 +439,10 @@ plugins {
 
 repositories {
     mavenCentral()
-    // Local repo or your Maven repository
-    mavenLocal()
 }
 
 dependencies {
-    compileOnly("me.internalizable.numdrassl:api:1.0-SNAPSHOT")
+    compileOnly("me.internalizable.numdrassl:numdrassl-api:1.0.0")
 }
 
 java {
@@ -402,6 +451,36 @@ java {
     }
 }
 ```
+
+#### Gradle (Groovy)
+
+```groovy
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compileOnly 'me.internalizable.numdrassl:numdrassl-api:1.0.0'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+```
+
+> **Note:** For snapshot versions (development), add the Sonatype snapshots repository:
+> ```kotlin
+> repositories {
+>     mavenCentral()
+>     maven("https://s01.oss.sonatype.org/content/repositories/snapshots/")
+> }
+> ```
 
 ### Basic Plugin
 

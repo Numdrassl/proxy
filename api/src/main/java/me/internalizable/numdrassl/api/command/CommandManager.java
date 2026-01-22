@@ -2,6 +2,7 @@ package me.internalizable.numdrassl.api.command;
 
 import javax.annotation.Nonnull;
 import java.util.Collection;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Manages command registration and execution.
@@ -67,5 +68,15 @@ public interface CommandManager {
      */
     @Nonnull
     CommandResult execute(@Nonnull CommandSource source, @Nonnull String commandLine);
+
+    /**
+     * Execute a command asynchronously as a source.
+     *
+     * @param source the command source
+     * @param commandLine the command line to execute (without leading slash)
+     * @return a future that completes with the command result
+     */
+    @Nonnull
+    CompletableFuture<CommandResult> executeAsync(@Nonnull CommandSource source, @Nonnull String commandLine);
 }
 

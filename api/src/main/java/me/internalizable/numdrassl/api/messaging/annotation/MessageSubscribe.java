@@ -16,21 +16,28 @@ import java.lang.annotation.Target;
  * when the containing class is registered with the messaging service.</p>
  *
  * <h2>Method Signature</h2>
- * <p>The method must have exactly one parameter: the message data type.
- * Optionally, it can have a second {@code String} parameter to receive the source proxy ID.</p>
+ * <p>The annotated method may accept either:</p>
+ * <ul>
+ *   <li><b>One parameter</b>: the message data type only (e.g., {@code ScoreData data})</li>
+ *   <li><b>Two parameters</b>: the source proxy ID as a {@code String} first, followed by
+ *       the message data type (e.g., {@code String sourceProxyId, GameEvent event})</li>
+ * </ul>
+ *
+ * <p>The parameter order for two-parameter methods is always:
+ * {@code (String sourceProxyId, MessageType data)}</p>
  *
  * <h2>Examples</h2>
  * <pre>{@code
  * @Plugin(id = "my-plugin", name = "My Plugin", version = "1.0.0")
  * public class MyPlugin {
  *
- *     // Plugin message subscription - plugin ID is inferred from @Plugin
+ *     // Single parameter: message data type only
  *     @MessageSubscribe(channel = "scores")
  *     public void onScoreUpdate(ScoreData data) {
  *         logger.info("Player {} scored {}", data.playerName(), data.score());
  *     }
  *
- *     // Plugin message with source proxy ID
+ *     // Two parameters: sourceProxyId first, then message data type
  *     @MessageSubscribe(channel = "events")
  *     public void onGameEvent(String sourceProxyId, GameEvent event) {
  *         logger.info("Received event from proxy {}", sourceProxyId);

@@ -33,6 +33,10 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -64,6 +68,9 @@ public final class RedisMessagingService implements MessagingService {
     private final SubscribeMethodProcessor methodProcessor;
 
     private final Map<String, List<SubscriptionEntry>> subscriptions = new ConcurrentHashMap<>();
+
+    // Executor for running message handlers off the Lettuce I/O thread
+    private final ExecutorService handlerExecutor;
     private final Map<Object, List<Subscription>> listenerSubscriptions = new ConcurrentHashMap<>();
     private final AtomicLong subscriptionIdCounter = new AtomicLong(0);
     private final AtomicBoolean connected = new AtomicBoolean(false);
@@ -80,6 +87,19 @@ public final class RedisMessagingService implements MessagingService {
         this.publishConnection = publishConnection;
         this.pubSubCommands = pubSubConnection.async();
         this.methodProcessor = new SubscribeMethodProcessor(localProxyId, codec, createSubscriptionFactory());
+
+        // Bounded executor for message handlers - prevents blocking Redis I/O thread
+        // Core: 2, Max: 8, Queue: 1000, Timeout: 60s, drops tasks when full
+        this.handlerExecutor = new ThreadPoolExecutor(
+                2, 8, 60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(1000),
+                r -> {
+                    Thread t = new Thread(r, "numdrassl-msg-handler");
+                    t.setDaemon(true);
+                    return t;
+                },
+                (r, executor) -> LOGGER.warn("Message handler queue full, dropping task")
+        );
 
         pubSubConnection.addListener(new RedisMessageListener(this::handleMessage));
         connected.set(true);
@@ -181,6 +201,17 @@ public final class RedisMessagingService implements MessagingService {
     public void shutdown() {
         LOGGER.info("Shutting down Redis messaging service");
         connected.set(false);
+
+        // Shutdown handler executor gracefully
+        handlerExecutor.shutdown();
+        try {
+            if (!handlerExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                handlerExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            handlerExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
 
         try {
             pubSubConnection.close();
@@ -339,7 +370,8 @@ public final class RedisMessagingService implements MessagingService {
                     subs.size(), listener.getClass().getSimpleName());
         }
 
-        return new CompositeSubscription(subs);
+        // Create composite with cleanup callback to remove listener from registry
+        return new CompositeSubscription(subs, () -> listenerSubscriptions.remove(listener));
     }
 
     @Override
@@ -438,6 +470,7 @@ public final class RedisMessagingService implements MessagingService {
             return;
         }
 
+        // Process each handler off the Lettuce I/O thread
         for (SubscriptionEntry entry : handlers) {
             if (!entry.isActive()) {
                 continue;
@@ -451,11 +484,14 @@ public final class RedisMessagingService implements MessagingService {
                 continue;
             }
 
-            try {
-                entry.getHandler().handle(channel, message);
-            } catch (Exception e) {
-                LOGGER.error("Error in message handler for channel {}", channel, e);
-            }
+            // Submit handler execution to bounded executor
+            handlerExecutor.execute(() -> {
+                try {
+                    entry.getHandler().handle(channel, message);
+                } catch (Exception e) {
+                    LOGGER.error("Error in message handler for channel {}", channel, e);
+                }
+            });
         }
     }
 

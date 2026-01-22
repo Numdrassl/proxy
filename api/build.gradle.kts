@@ -1,14 +1,15 @@
 plugins {
     `java-library`
     `maven-publish`
+    signing
 }
 
 group = "me.internalizable.numdrassl"
 version = rootProject.version
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_25
-    targetCompatibility = JavaVersion.VERSION_25
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 
     withJavadocJar()
     withSourcesJar()
@@ -61,11 +62,58 @@ publishing {
         create<MavenPublication>("maven") {
             from(components["java"])
 
+            artifactId = "numdrassl-api"
+
             pom {
                 name.set("Numdrassl API")
-                description.set("API for extending Numdrassl Hytale QUIC Proxy")
+                description.set("Plugin API for Numdrassl, a high-performance QUIC proxy for Hytale servers supporting cross-proxy messaging, events, and commands")
+                url.set("https://github.com/Numdrassl/proxy")
+
+                licenses {
+                    license {
+                        name.set("MIT License")
+                        url.set("https://opensource.org/licenses/MIT")
+                    }
+                }
+
+                developers {
+                    developer {
+                        id.set("internalizable")
+                        name.set("Internalizable")
+                    }
+                }
+
+                scm {
+                    url.set("https://github.com/Numdrassl/proxy")
+                    connection.set("scm:git:git://github.com/Numdrassl/proxy.git")
+                    developerConnection.set("scm:git:ssh://git@github.com/Numdrassl/proxy.git")
+                }
             }
         }
     }
+
+    repositories {
+        maven {
+            name = "Local"
+            url = uri(layout.buildDirectory.dir("staging-deploy"))
+        }
+    }
+}
+
+signing {
+    // Use GPG command-line tool with key ID from gradle.properties
+    // Set signing.gnupg.keyName in ~/.gradle/gradle.properties
+    useGpgCmd()
+    sign(publishing.publications["maven"])
+}
+
+// Task to create a bundle ZIP for Central Portal upload
+tasks.register<Zip>("createCentralBundle") {
+    dependsOn("publishMavenPublicationToLocalRepository")
+
+    archiveFileName.set("central-bundle.zip")
+    destinationDirectory.set(layout.buildDirectory.dir("central"))
+
+    from(layout.buildDirectory.dir("staging-deploy"))
 }
 

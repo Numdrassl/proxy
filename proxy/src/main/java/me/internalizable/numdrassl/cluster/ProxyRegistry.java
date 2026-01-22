@@ -37,7 +37,7 @@ public final class ProxyRegistry {
     private static final long CLEANUP_INTERVAL_MS = 10_000; // 10 seconds
 
     // TODO: Add maxPlayers to HeartbeatMessage so each proxy can report its actual capacity
-    // See: https://github.com/Numdrassl/proxy/issues/XXX
+    // Currently all proxies are assumed to have DEFAULT_MAX_PLAYERS capacity
     private static final int DEFAULT_MAX_PLAYERS = 1000;
 
     private final Map<String, ProxyInfo> proxies = new ConcurrentHashMap<>();
@@ -170,8 +170,8 @@ public final class ProxyRegistry {
         // Track whether this is a new proxy for event firing
         final boolean[] isNew = {false};
 
-        // Atomic update-and-check to prevent race conditions with concurrent heartbeats
-        proxies.compute(proxyId, (id, existing) -> {
+        // Atomic update-and-check - capture the result to avoid race with concurrent removals
+        ProxyInfo newProxy = proxies.compute(proxyId, (id, existing) -> {
             isNew[0] = (existing == null);
             return new ProxyInfo(
                     proxyId,
@@ -187,7 +187,6 @@ public final class ProxyRegistry {
 
         // Fire join event only for genuinely new proxies (not self)
         if (isNew[0] && !proxyId.equals(localProxyId)) {
-            ProxyInfo newProxy = proxies.get(proxyId);
             LOGGER.info("Proxy {} joined cluster (region: {}, players: {})",
                     proxyId, heartbeat.region(), heartbeat.playerCount());
             eventManager.fire(new ProxyJoinClusterEvent(newProxy));

@@ -20,6 +20,18 @@ public interface PluginManager {
     Optional<PluginContainer> getPlugin(@Nonnull String id);
 
     /**
+     * Get a plugin container from a plugin instance.
+     *
+     * <p>This is useful when you have a reference to a plugin's main class instance
+     * and need to get its container metadata.</p>
+     *
+     * @param instance the plugin instance
+     * @return the plugin container, or empty if not found
+     */
+    @Nonnull
+    Optional<PluginContainer> fromInstance(@Nonnull Object instance);
+
+    /**
      * Get all loaded plugins.
      *
      * @return an unmodifiable collection of all plugins
@@ -49,5 +61,16 @@ public interface PluginManager {
      * @param path the path to add
      */
     void addPluginPath(@Nonnull Path path);
+
+    /**
+     * Add a JAR file to a plugin's classpath at runtime.
+     *
+     * <p>This allows plugins to dynamically load additional dependencies
+     * after initialization, such as database drivers or other libraries.</p>
+     *
+     * @param plugin the plugin instance requesting the classpath addition
+     * @param file the path to the JAR file to add
+     */
+    void addToClasspath(@Nonnull Object plugin, @Nonnull Path file);
 }
 

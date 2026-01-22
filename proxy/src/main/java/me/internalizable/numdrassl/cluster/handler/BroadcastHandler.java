@@ -28,7 +28,7 @@ public final class BroadcastHandler {
     private final SessionManager sessionManager;
     private final String localProxyId;
 
-    private Subscription subscription;
+    private volatile Subscription subscription;
 
     public BroadcastHandler(
             @Nonnull MessagingService messagingService,
@@ -42,7 +42,10 @@ public final class BroadcastHandler {
     /**
      * Start listening for broadcast messages.
      */
-    public void start() {
+    public synchronized void start() {
+        if (subscription != null) {
+            return; // Already started
+        }
         subscription = messagingService.subscribe(
                 Channels.BROADCAST,
                 BroadcastMessage.class,
@@ -54,9 +57,10 @@ public final class BroadcastHandler {
     /**
      * Stop listening for broadcast messages.
      */
-    public void stop() {
-        if (subscription != null) {
-            subscription.unsubscribe();
+    public synchronized void stop() {
+        Subscription sub = subscription;
+        if (sub != null) {
+            sub.unsubscribe();
             subscription = null;
         }
         LOGGER.info("Broadcast handler stopped");

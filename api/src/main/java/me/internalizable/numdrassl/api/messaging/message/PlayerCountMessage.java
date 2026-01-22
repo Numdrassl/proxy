@@ -38,11 +38,16 @@ public record PlayerCountMessage(
 ) implements ChannelMessage {
 
     /**
-     *
-     *
-     * Validates that player counts are non-negative and within capacity.
+     * Validates that sourceProxyId and timestamp are not null,
+     * and that player counts are non-negative and within capacity.
      */
     public PlayerCountMessage {
+        if (sourceProxyId == null) {
+            throw new NullPointerException("sourceProxyId must not be null");
+        }
+        if (timestamp == null) {
+            throw new NullPointerException("timestamp must not be null");
+        }
         if (playerCount < 0 || maxPlayers < 0) {
             throw new IllegalArgumentException("playerCount and maxPlayers must be non-negative");
         }

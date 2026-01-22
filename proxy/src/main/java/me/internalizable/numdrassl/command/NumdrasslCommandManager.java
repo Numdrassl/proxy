@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -128,6 +129,12 @@ public class NumdrasslCommandManager implements CommandManager {
             LOGGER.error("Error executing command: /{}", name, e);
             return CommandResult.failure("An error occurred while executing the command");
         }
+    }
+
+    @Override
+    @Nonnull
+    public CompletableFuture<CommandResult> executeAsync(@Nonnull CommandSource source, @Nonnull String commandLine) {
+        return CompletableFuture.supplyAsync(() -> execute(source, commandLine));
     }
 
     private static class RegisteredCommand {
