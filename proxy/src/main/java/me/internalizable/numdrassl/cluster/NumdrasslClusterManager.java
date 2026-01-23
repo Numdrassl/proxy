@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Implementation of {@link ClusterManager} for managing proxy instances.
@@ -29,6 +30,11 @@ public final class NumdrasslClusterManager implements ClusterManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(NumdrasslClusterManager.class);
     private static final String VERSION = "1.0.0";
 
+    /**
+     * Timeout for synchronous Redis operations (ms).
+     */
+    private static final long REDIS_TIMEOUT_MS = 500;
+
     private final String proxyId;
     private final String region;
     private final InetSocketAddress publicAddress;
@@ -38,6 +44,7 @@ public final class NumdrasslClusterManager implements ClusterManager {
 
     private ProxyRegistry registry;
     private HeartbeatPublisher heartbeatPublisher;
+    private PlayerLocationService playerLocationService;
 
     public NumdrasslClusterManager(
             @Nonnull ProxyConfig config,
@@ -82,6 +89,14 @@ public final class NumdrasslClusterManager implements ClusterManager {
         );
         heartbeatPublisher.start();
 
+        // Create player location service for cross-cluster player lookup
+        if (messagingService instanceof me.internalizable.numdrassl.messaging.redis.RedisMessagingService redisService) {
+            this.playerLocationService = new PlayerLocationService(proxyId, redisService.getConnection());
+            LOGGER.info("Player location service initialized");
+        } else {
+            LOGGER.warn("Player location service not available - messaging service is not Redis-based");
+        }
+
         LOGGER.info("Cluster services initialized");
     }
 
@@ -124,7 +139,38 @@ public final class NumdrasslClusterManager implements ClusterManager {
             registry.stop();
             registry = null;
         }
+        playerLocationService = null;
         LOGGER.info("Cluster manager shutdown complete");
+    }
+
+    // ==================== Player Location Tracking ====================
+
+    /**
+     * Registers a player as connected to this proxy.
+     *
+     * <p>Should be called when a player successfully connects and authenticates.
+     * This updates Redis so other proxies can find this player.</p>
+     *
+     * @param playerUuid the player's UUID
+     */
+    public void registerPlayerLocation(@Nonnull UUID playerUuid) {
+        if (playerLocationService != null) {
+            playerLocationService.registerPlayer(playerUuid);
+        }
+    }
+
+    /**
+     * Unregisters a player from this proxy.
+     *
+     * <p>Should be called when a player disconnects. This removes their
+     * entry from Redis.</p>
+     *
+     * @param playerUuid the player's UUID
+     */
+    public void unregisterPlayerLocation(@Nonnull UUID playerUuid) {
+        if (playerLocationService != null) {
+            playerLocationService.unregisterPlayer(playerUuid);
+        }
     }
 
     @Override
@@ -207,23 +253,44 @@ public final class NumdrasslClusterManager implements ClusterManager {
     @Override
     @Nonnull
     public Optional<String> findPlayerProxy(@Nonnull UUID playerUuid) {
-        // First check local sessions
+        // First check local sessions (fast path)
         if (sessionManager.findByUuid(playerUuid).isPresent()) {
             return Optional.of(proxyId);
         }
 
-        // TODO: Implement cross-cluster player lookup via Redis
-        // This requires a shared player-location store that tracks:
-        // - Player UUID -> ProxyId mapping
-        // - Updated on player connect/disconnect
-        // - Query Redis for: GET "numdrassl:player:<uuid>"
-        // For now, remote players are not visible in findPlayerProxy
+        // Fallback to sync Redis lookup (blocking - prefer findPlayerProxyAsync)
+        if (playerLocationService != null) {
+            return playerLocationService.findPlayerProxySync(playerUuid, REDIS_TIMEOUT_MS);
+        }
+
         return Optional.empty();
+    }
+
+    @Override
+    @Nonnull
+    public CompletableFuture<Optional<String>> findPlayerProxyAsync(@Nonnull UUID playerUuid) {
+        // First check local sessions (fast path)
+        if (sessionManager.findByUuid(playerUuid).isPresent()) {
+            return CompletableFuture.completedFuture(Optional.of(proxyId));
+        }
+
+        // Async Redis lookup
+        if (playerLocationService != null) {
+            return playerLocationService.findPlayerProxy(playerUuid);
+        }
+
+        return CompletableFuture.completedFuture(Optional.empty());
     }
 
     @Override
     public boolean isPlayerOnline(@Nonnull UUID playerUuid) {
         return findPlayerProxy(playerUuid).isPresent();
+    }
+
+    @Override
+    @Nonnull
+    public CompletableFuture<Boolean> isPlayerOnlineAsync(@Nonnull UUID playerUuid) {
+        return findPlayerProxyAsync(playerUuid).thenApply(Optional::isPresent);
     }
 
     @Override

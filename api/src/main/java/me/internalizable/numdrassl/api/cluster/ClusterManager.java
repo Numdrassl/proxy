@@ -4,6 +4,7 @@ import javax.annotation.Nonnull;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Manages the cluster of proxy instances.
@@ -99,6 +100,8 @@ public interface ClusterManager {
     /**
      * Find which proxy a player is connected to.
      *
+     * <p>For async operations, prefer {@link #findPlayerProxyAsync(UUID)}.</p>
+     *
      * @param playerUuid the player's UUID
      * @return the proxy ID, or empty if player is not online
      */
@@ -106,12 +109,38 @@ public interface ClusterManager {
     Optional<String> findPlayerProxy(@Nonnull UUID playerUuid);
 
     /**
+     * Find which proxy a player is connected to (async).
+     *
+     * <p>This is the preferred method for cross-cluster lookups as it
+     * doesn't block while waiting for Redis responses.</p>
+     *
+     * @param playerUuid the player's UUID
+     * @return a future completing with the proxy ID, or empty if not online
+     */
+    @Nonnull
+    CompletableFuture<Optional<String>> findPlayerProxyAsync(@Nonnull UUID playerUuid);
+
+    /**
      * Check if a player is online anywhere in the cluster.
+     *
+     * <p>For async operations, prefer {@link #isPlayerOnlineAsync(UUID)}.</p>
      *
      * @param playerUuid the player's UUID
      * @return true if the player is connected to any proxy
      */
     boolean isPlayerOnline(@Nonnull UUID playerUuid);
+
+    /**
+     * Check if a player is online anywhere in the cluster (async).
+     *
+     * <p>This is the preferred method for cross-cluster lookups as it
+     * doesn't block while waiting for Redis responses.</p>
+     *
+     * @param playerUuid the player's UUID
+     * @return a future completing with true if the player is online
+     */
+    @Nonnull
+    CompletableFuture<Boolean> isPlayerOnlineAsync(@Nonnull UUID playerUuid);
 
     /**
      * Get the proxy with the lowest load in a specific region.

@@ -198,6 +198,19 @@ public final class RedisMessagingService implements MessagingService {
         return connected.get() && pubSubConnection.isOpen();
     }
 
+    /**
+     * Gets the Redis connection for direct key-value operations.
+     *
+     * <p>Used by services that need direct Redis access, such as
+     * {@link me.internalizable.numdrassl.cluster.PlayerLocationService}.</p>
+     *
+     * @return the stateful Redis connection
+     */
+    @Nonnull
+    public StatefulRedisConnection<String, String> getConnection() {
+        return publishConnection;
+    }
+
     public void shutdown() {
         LOGGER.info("Shutting down Redis messaging service");
         connected.set(false);

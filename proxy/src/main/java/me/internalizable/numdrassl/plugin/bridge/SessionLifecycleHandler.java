@@ -7,6 +7,7 @@ import me.internalizable.numdrassl.api.event.server.ServerConnectedEvent;
 import me.internalizable.numdrassl.api.event.server.ServerPreConnectEvent;
 import me.internalizable.numdrassl.api.player.Player;
 import me.internalizable.numdrassl.api.server.RegisteredServer;
+import me.internalizable.numdrassl.cluster.NumdrasslClusterManager;
 import me.internalizable.numdrassl.config.BackendServer;
 import me.internalizable.numdrassl.event.api.NumdrasslEventManager;
 import me.internalizable.numdrassl.plugin.NumdrasslProxy;
@@ -78,6 +79,13 @@ public final class SessionLifecycleHandler {
     public void onSessionClosed(@Nonnull ProxySession session) {
         Objects.requireNonNull(session, "session");
 
+        // Unregister player location from cluster
+        if (session.getPlayerUuid() != null) {
+            NumdrasslClusterManager clusterManager =
+                (NumdrasslClusterManager) proxy.getClusterManager();
+            clusterManager.unregisterPlayerLocation(session.getPlayerUuid());
+        }
+
         Player player = getOrCreatePlayer(session);
         if (player != null) {
             // Remove player from their current server's player list
@@ -119,6 +127,13 @@ public final class SessionLifecycleHandler {
 
         Player player = getOrCreatePlayer(session);
         if (player != null) {
+            // Register player location in cluster
+            if (session.getPlayerUuid() != null) {
+                NumdrasslClusterManager clusterManager =
+                    (NumdrasslClusterManager) proxy.getClusterManager();
+                clusterManager.registerPlayerLocation(session.getPlayerUuid());
+            }
+
             PostLoginEvent event = new PostLoginEvent(player);
             eventManager.fireSync(event);
         }
