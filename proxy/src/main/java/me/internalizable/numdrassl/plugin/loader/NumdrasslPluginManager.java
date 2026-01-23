@@ -215,7 +215,7 @@ public final class NumdrasslPluginManager implements PluginManager {
             dp.description().getName(),
             dp.description().getVersion().orElse("unknown"));
 
-        URLClassLoader classLoader = new URLClassLoader(
+        PluginClassLoader classLoader = new PluginClassLoader(
             new URL[]{dp.jarPath().toUri().toURL()},
             getClass().getClassLoader()
         );
@@ -281,7 +281,7 @@ public final class NumdrasslPluginManager implements PluginManager {
         }
     }
 
-    private void closeClassLoaderSafely(URLClassLoader classLoader) {
+    private void closeClassLoaderSafely(PluginClassLoader classLoader) {
         try {
             classLoader.close();
         } catch (IOException e) {
@@ -343,7 +343,7 @@ public final class NumdrasslPluginManager implements PluginManager {
         }
 
         // Get the plugin's classloader
-        URLClassLoader classLoader = container.getClassLoader();
+        PluginClassLoader classLoader = container.getClassLoader();
         if (classLoader == null) {
             LOGGER.warn("Cannot add to classpath: plugin {} has no classloader",
                 container.getDescription().getId());
@@ -351,10 +351,8 @@ public final class NumdrasslPluginManager implements PluginManager {
         }
 
         try {
-            // Use reflection to call addURL on the URLClassLoader
-            java.lang.reflect.Method addUrlMethod = URLClassLoader.class.getDeclaredMethod("addURL", URL.class);
-            addUrlMethod.setAccessible(true);
-            addUrlMethod.invoke(classLoader, file.toUri().toURL());
+            // Use PluginClassLoader's public addPath method - no reflection needed!
+            classLoader.addPath(file);
             LOGGER.debug("Added {} to classpath for plugin {}", file, container.getDescription().getId());
         } catch (Exception e) {
             LOGGER.error("Failed to add {} to classpath for plugin {}",

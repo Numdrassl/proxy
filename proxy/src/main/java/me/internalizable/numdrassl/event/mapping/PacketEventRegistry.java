@@ -90,13 +90,17 @@ public final class PacketEventRegistry {
             PacketContext.Direction direction,
             PacketEventMapping<P, Object> mapping) {
 
-        Player player = new NumdrasslPlayer(session, apiProxy);
+        // Get or create cached player
+        Player player = getOrCreatePlayer(session);
         PacketContext context = new PacketContext(session, player, direction);
 
         Object event = mapping.createEvent(context, packet);
         if (event == null) {
             return packet;
         }
+
+        // Note: PermissionSetupEvent is fired earlier in ClientAuthenticationHandler.handleConnect()
+        // This gives LuckPerms time to load data before LoginEvent fires.
 
         eventManager.fireSync(event);
 
@@ -106,6 +110,28 @@ public final class PacketEventRegistry {
         }
 
         return mapping.applyChanges(context, packet, event);
+    }
+
+    /**
+     * Gets or creates a cached player for the session.
+     */
+    @Nullable
+    private Player getOrCreatePlayer(ProxySession session) {
+        // Check for cached player first
+        Player cached = session.getCachedPlayer();
+        if (cached != null) {
+            return cached;
+        }
+
+        // Create new player if identity is available
+        if (session.getPlayerUuid() != null || session.getUsername() != null) {
+            NumdrasslPlayer player = new NumdrasslPlayer(session, apiProxy);
+            session.setCachedPlayer(player);
+            return player;
+        }
+
+        // Return a temporary player for packets before identity is known
+        return new NumdrasslPlayer(session, apiProxy);
     }
 
     private void registerDefaultMappings() {

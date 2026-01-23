@@ -2,7 +2,9 @@ package me.internalizable.numdrassl.plugin.player;
 
 import com.hypixel.hytale.protocol.Packet;
 import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
+import me.internalizable.numdrassl.api.event.permission.PermissionSetupEvent;
 import me.internalizable.numdrassl.api.permission.PermissionFunction;
+import me.internalizable.numdrassl.api.permission.PermissionProvider;
 import me.internalizable.numdrassl.api.permission.Tristate;
 import me.internalizable.numdrassl.api.player.Player;
 import me.internalizable.numdrassl.api.player.PlayerSettings;
@@ -18,6 +20,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -35,16 +38,62 @@ public final class NumdrasslPlayer implements Player {
     private final NumdrasslProxy proxy;
     private final AtomicReference<PermissionFunction> permissionFunction;
     private final PlayerSettings playerSettings;
+    private final AtomicBoolean permissionsSetup = new AtomicBoolean(false);
 
     public NumdrasslPlayer(@Nonnull ProxySession session, @Nonnull NumdrasslProxy proxy) {
         this.session = Objects.requireNonNull(session, "session");
         this.proxy = Objects.requireNonNull(proxy, "proxy");
-        // Initialize permission function from the manager
-        this.permissionFunction = new AtomicReference<>(
-            proxy.getPermissionManager().createFunction(this)
-        );
+        // Initialize with a lazy permission function that will be set up on first access
+        this.permissionFunction = new AtomicReference<>(PermissionFunction.ALWAYS_UNDEFINED);
         // Initialize player settings from session identity
         this.playerSettings = new NumdrasslPlayerSettings(session.getIdentity());
+    }
+
+    /**
+     * Sets up the permission function by firing PermissionSetupEvent.
+     * This allows permission plugins like LuckPerms to inject their providers.
+     * This should be called once during the login process.
+     *
+     * <p>This method fires the event synchronously and waits for any registered
+     * async tasks to complete before returning.</p>
+     *
+     * @return a CompletableFuture that completes when permission setup is done
+     */
+    public CompletableFuture<Void> setupPermissions() {
+        if (!permissionsSetup.compareAndSet(false, true)) {
+            return CompletableFuture.completedFuture(null); // Already set up
+        }
+
+        // Get the default provider from the permission manager
+        PermissionProvider defaultProvider = proxy.getPermissionManager()
+            .getProvider()
+            .orElse(player -> PermissionFunction.ALWAYS_UNDEFINED);
+
+        // Fire the event to let plugins provide their own permission function
+        // Plugins may register async tasks (e.g., LuckPerms loading user data)
+        PermissionSetupEvent event = new PermissionSetupEvent(this, defaultProvider);
+        proxy.getNumdrasslEventManager().fireSync(event);
+
+        // Wait for any async tasks and then set the permission function
+        return event.getAsyncTask()
+            .orTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .exceptionally(ex -> {
+                org.slf4j.LoggerFactory.getLogger(NumdrasslPlayer.class)
+                    .warn("Timeout or error waiting for permission setup for {}", getUsername(), ex);
+                return null;
+            })
+            .thenRun(() -> {
+                // Create the permission function from the provider
+                PermissionFunction function = event.createFunction();
+                permissionFunction.set(function);
+            });
+    }
+
+    /**
+     * Checks if permissions have been set up for this player.
+     */
+    public boolean arePermissionsSetUp() {
+        return permissionsSetup.get();
     }
 
     // ==================== Identity ====================
@@ -177,6 +226,10 @@ public final class NumdrasslPlayer implements Player {
     @Nonnull
     public Tristate getPermissionValue(@Nonnull String permission) {
         Objects.requireNonNull(permission, "permission");
+        // Ensure permissions are set up before checking
+        if (!permissionsSetup.get()) {
+            setupPermissions();
+        }
         return permissionFunction.get().getPermissionValue(permission);
     }
 
@@ -188,6 +241,10 @@ public final class NumdrasslPlayer implements Player {
     @Override
     @Nonnull
     public PermissionFunction getPermissionFunction() {
+        // Ensure permissions are set up before returning function
+        if (!permissionsSetup.get()) {
+            setupPermissions();
+        }
         return permissionFunction.get();
     }
 
@@ -195,6 +252,7 @@ public final class NumdrasslPlayer implements Player {
     public void setPermissionFunction(@Nonnull PermissionFunction function) {
         Objects.requireNonNull(function, "function");
         permissionFunction.set(function);
+        permissionsSetup.set(true);
     }
 
     // ==================== Internal Access ====================
@@ -206,6 +264,7 @@ public final class NumdrasslPlayer implements Player {
     public ProxySession getSession() {
         return session;
     }
+
 
     // ==================== Object Methods ====================
 

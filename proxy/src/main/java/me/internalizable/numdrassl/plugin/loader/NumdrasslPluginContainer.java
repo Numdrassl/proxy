@@ -7,7 +7,6 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.Closeable;
 import java.io.IOException;
-import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
@@ -23,13 +22,13 @@ public final class NumdrasslPluginContainer implements PluginContainer, Closeabl
     private final PluginDescription description;
     private final Object instance;
     private final Path dataDirectory;
-    private final URLClassLoader classLoader;
+    private final PluginClassLoader classLoader;
 
     public NumdrasslPluginContainer(
             @Nonnull PluginDescription description,
             @Nonnull Object instance,
             @Nonnull Path dataDirectory,
-            @Nullable URLClassLoader classLoader) {
+            @Nullable PluginClassLoader classLoader) {
 
         this.description = Objects.requireNonNull(description, "description");
         this.instance = Objects.requireNonNull(instance, "instance");
@@ -61,7 +60,7 @@ public final class NumdrasslPluginContainer implements PluginContainer, Closeabl
      * @return the classloader, or null for built-in plugins
      */
     @Nullable
-    public URLClassLoader getClassLoader() {
+    public PluginClassLoader getClassLoader() {
         return classLoader;
     }
 

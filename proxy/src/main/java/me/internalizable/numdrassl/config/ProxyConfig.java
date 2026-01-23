@@ -66,7 +66,12 @@ public class ProxyConfig {
         LoaderOptions options = new LoaderOptions();
         Yaml yaml = new Yaml(new Constructor(ProxyConfig.class, options));
         try (InputStream is = Files.newInputStream(path)) {
-            return yaml.load(is);
+            ProxyConfig config = yaml.load(is);
+            // Ensure defaults for fields that might not exist in older configs
+            if (config == null) {
+                config = new ProxyConfig();
+            }
+            return config;
         }
     }
 

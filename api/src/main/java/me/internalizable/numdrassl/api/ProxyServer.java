@@ -5,6 +5,7 @@ import me.internalizable.numdrassl.api.command.CommandManager;
 import me.internalizable.numdrassl.api.command.CommandSource;
 import me.internalizable.numdrassl.api.event.EventManager;
 import me.internalizable.numdrassl.api.messaging.MessagingService;
+import me.internalizable.numdrassl.api.messaging.backend.BackendMessagingService;
 import me.internalizable.numdrassl.api.permission.PermissionManager;
 import me.internalizable.numdrassl.api.player.Player;
 import me.internalizable.numdrassl.api.plugin.PluginManager;
@@ -124,6 +125,18 @@ public interface ProxyServer {
      */
     @Nonnull
     MessagingService getMessagingService();
+
+    /**
+     * Get the backend messaging service for proxy-to-backend communication.
+     *
+     * <p>The backend messaging service enables bidirectional communication between
+     * the proxy and backend servers running the Bridge plugin. Unlike player-based
+     * plugin messaging, this works even when no players are connected.</p>
+     *
+     * @return the backend messaging service
+     */
+    @Nonnull
+    BackendMessagingService getBackendMessagingService();
 
     /**
      * Get the cluster manager for managing proxy instances.

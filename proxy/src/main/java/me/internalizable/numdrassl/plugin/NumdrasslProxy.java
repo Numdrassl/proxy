@@ -28,8 +28,8 @@ import me.internalizable.numdrassl.messaging.local.LocalMessagingService;
 import me.internalizable.numdrassl.messaging.redis.RedisMessagingService;
 import me.internalizable.numdrassl.plugin.bridge.ApiEventBridge;
 import me.internalizable.numdrassl.plugin.loader.NumdrasslPluginManager;
-import me.internalizable.numdrassl.plugin.messaging.BackendControlManager;
 import me.internalizable.numdrassl.plugin.messaging.NumdrasslChannelRegistrar;
+import me.internalizable.numdrassl.plugin.messaging.NoOpBackendMessagingService;
 import me.internalizable.numdrassl.plugin.permission.NumdrasslPermissionManager;
 import me.internalizable.numdrassl.plugin.player.NumdrasslPlayer;
 import me.internalizable.numdrassl.plugin.server.NumdrasslRegisteredServer;
@@ -40,6 +40,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -73,7 +74,6 @@ public final class NumdrasslProxy implements ProxyServer {
     private final NumdrasslScheduler scheduler;
     private final NumdrasslPermissionManager permissionManager;
     private final NumdrasslChannelRegistrar channelRegistrar;
-    private final BackendControlManager controlManager;
     private final ApiEventBridge eventBridge;
     private final NumdrasslClusterManager clusterManager;
     private MessagingService messagingService;
@@ -99,7 +99,6 @@ public final class NumdrasslProxy implements ProxyServer {
         this.pluginManager = new NumdrasslPluginManager(this, Paths.get("plugins"));
         this.eventBridge = new ApiEventBridge(this);
         this.clusterManager = new NumdrasslClusterManager(core.getConfig(), core.getSessionManager());
-        this.controlManager = new BackendControlManager(core.getConfig(), this, eventManager, channelRegistrar);
 
         core.getEventManager().registerListener(eventBridge);
         registerConfiguredServers();
@@ -114,7 +113,6 @@ public final class NumdrasslProxy implements ProxyServer {
             InetSocketAddress address = new InetSocketAddress(backend.getHost(), backend.getPort());
             NumdrasslRegisteredServer server = new NumdrasslRegisteredServer(backend.getName(), address);
             server.setDefault(backend.isDefaultServer());
-            server.setControlManager(controlManager);
             servers.put(backend.getName().toLowerCase(), server);
         }
     }
@@ -127,22 +125,11 @@ public final class NumdrasslProxy implements ProxyServer {
      */
     public void initialize() {
         initializeMessaging();
-        initializeControlConnections();
         registerBuiltinCommands();
         registerCommandListener();
         loadPlugins();
     }
 
-    private void initializeControlConnections() {
-        var config = core.getConfig();
-
-        // Initialize SSL context for control connections
-        controlManager.initSslContext(config.getCertificatePath(), config.getPrivateKeyPath());
-
-        // Start control connections to all backends
-        controlManager.start();
-        LOGGER.info("Backend control connections initialized");
-    }
 
     private void initializeMessaging() {
         var config = core.getConfig();
@@ -195,7 +182,6 @@ public final class NumdrasslProxy implements ProxyServer {
      */
     public void shutdownApi() {
         pluginManager.disablePlugins();
-        controlManager.stop();
         clusterManager.shutdown();
 
         if (messagingService instanceof RedisMessagingService redisService) {
@@ -261,6 +247,13 @@ public final class NumdrasslProxy implements ProxyServer {
 
     @Override
     @Nonnull
+    public me.internalizable.numdrassl.api.messaging.backend.BackendMessagingService getBackendMessagingService() {
+        // TODO: Implement backend messaging via Redis pub/sub
+        return NoOpBackendMessagingService.INSTANCE;
+    }
+
+    @Override
+    @Nonnull
     public ClusterManager getClusterManager() {
         return clusterManager;
     }
@@ -277,7 +270,10 @@ public final class NumdrasslProxy implements ProxyServer {
     public Collection<Player> getAllPlayers() {
         List<Player> players = new ArrayList<>();
         for (ProxySession session : core.getSessionManager().getAllSessions()) {
-            players.add(new NumdrasslPlayer(session, this));
+            Player player = getOrCreatePlayer(session);
+            if (player != null) {
+                players.add(player);
+            }
         }
         return Collections.unmodifiableList(players);
     }
@@ -287,7 +283,7 @@ public final class NumdrasslProxy implements ProxyServer {
     public Optional<Player> getPlayer(@Nonnull UUID uuid) {
         Objects.requireNonNull(uuid, "uuid");
         return core.getSessionManager().findByUuid(uuid)
-            .map(session -> new NumdrasslPlayer(session, this));
+            .map(this::getOrCreatePlayer);
     }
 
     @Override
@@ -296,10 +292,30 @@ public final class NumdrasslProxy implements ProxyServer {
         Objects.requireNonNull(username, "username");
         for (ProxySession session : core.getSessionManager().getAllSessions()) {
             if (username.equalsIgnoreCase(session.getUsername())) {
-                return Optional.of(new NumdrasslPlayer(session, this));
+                return Optional.ofNullable(getOrCreatePlayer(session));
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Gets the cached player for a session, or creates and caches a new one.
+     */
+    @Nullable
+    private Player getOrCreatePlayer(@Nonnull ProxySession session) {
+        // Check for cached player first
+        Player cached = session.getCachedPlayer();
+        if (cached != null) {
+            return cached;
+        }
+
+        // Create new player if identity is available
+        if (session.getPlayerUuid() != null || session.getUsername() != null) {
+            NumdrasslPlayer player = new NumdrasslPlayer(session, this);
+            session.setCachedPlayer(player);
+            return player;
+        }
+        return null;
     }
 
     @Override

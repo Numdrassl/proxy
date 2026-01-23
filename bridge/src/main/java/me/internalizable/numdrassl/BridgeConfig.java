@@ -6,9 +6,19 @@ import com.hypixel.hytale.codec.builder.BuilderCodec;
 import lombok.Getter;
 import me.internalizable.numdrassl.common.RandomUtil;
 
+/**
+ * Configuration for the Bridge plugin.
+ */
 @Getter
 public class BridgeConfig {
+    /**
+     * Shared secret between proxy and backend for HMAC verification.
+     */
     private String proxySecret = RandomUtil.generateSecureRandomString(32);
+
+    /**
+     * Name of this backend server (must match the name configured in the proxy).
+     */
     private String serverName = "main";
 
     public static final BuilderCodec<BridgeConfig> CODEC = BuilderCodec.builder(BridgeConfig.class, BridgeConfig::new)

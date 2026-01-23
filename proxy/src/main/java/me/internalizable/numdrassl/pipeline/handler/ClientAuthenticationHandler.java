@@ -60,14 +60,40 @@ public final class ClientAuthenticationHandler {
         session.setState(SessionState.AUTHENTICATING);
         proxyCore.getSessionManager().registerPlayerUuid(session);
 
-        Connect processedConnect = dispatchConnectEvent(connect);
-        if (processedConnect == null) {
-            session.disconnect("Connection cancelled");
+        // Fire PermissionSetupEvent early - this allows permission plugins like LuckPerms
+        // to start loading user data asynchronously while authentication proceeds.
+        // By the time LoginEvent fires (after auth completes), the data should be ready.
+        firePermissionSetupEvent();
+
+        // Store the connect packet - LoginEvent will be fired after authentication completes
+        // in completeAuthentication() to give async permission loading time to complete.
+        session.setOriginalConnect(connect);
+        requestAuthGrant(connect);
+    }
+
+    /**
+     * Fires the PermissionSetupEvent to allow plugins to set up permissions.
+     * This is called early in the connection flow to give async plugins time to load data.
+     * The returned future completes when permission setup is done.
+     */
+    private void firePermissionSetupEvent() {
+        var apiProxy = proxyCore.getApiProxy();
+        if (apiProxy == null) {
             return;
         }
 
-        session.setOriginalConnect(processedConnect);
-        requestAuthGrant(processedConnect);
+        // Create and cache the player, start async permission loading
+        // The returned future will complete when all async tasks are done
+        apiProxy.getEventBridge().getLifecycleHandler().setupPlayerPermissions(session)
+            .whenComplete((player, ex) -> {
+                if (ex != null) {
+                    LOGGER.warn("Session {}: Error during permission setup", session.getSessionId(), ex);
+                } else if (player == null) {
+                    LOGGER.debug("Session {}: Could not create player for permission setup", session.getSessionId());
+                } else {
+                    LOGGER.debug("Session {}: Permission setup completed for {}", session.getSessionId(), player.getUsername());
+                }
+            });
     }
 
     /**
@@ -184,7 +210,28 @@ public final class ClientAuthenticationHandler {
     private void completeAuthentication(String serverAccessToken) {
         ServerAuthToken serverAuthToken = new ServerAuthToken(serverAccessToken, null);
         session.sendToClient(serverAuthToken);
+
+        // Fire LoginEvent now that authentication is complete
+        // This gives permission plugins time to load data between PermissionSetupEvent and LoginEvent
+        fireLoginEvent();
+
         onAuthenticationComplete.run();
+    }
+
+    /**
+     * Fires the LoginEvent after authentication completes.
+     * If cancelled, disconnects the player.
+     */
+    private void fireLoginEvent() {
+        Connect connect = session.getOriginalConnect();
+        if (connect == null) {
+            return;
+        }
+
+        Connect processed = dispatchConnectEvent(connect);
+        if (processed == null) {
+            session.disconnect("Login denied");
+        }
     }
 }
 

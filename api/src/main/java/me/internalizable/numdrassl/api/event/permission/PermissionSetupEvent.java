@@ -7,6 +7,8 @@ import me.internalizable.numdrassl.api.player.Player;
 
 import javax.annotation.Nonnull;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Event fired when a permission subject's permission function needs to be set up.
@@ -18,32 +20,26 @@ import java.util.Objects;
  * <p>The subject can be either a {@link Player} or the console command source.
  * Permission plugins should handle both cases appropriately.</p>
  *
+ * <h2>Async Support</h2>
+ * <p>If your permission plugin needs to load data asynchronously (e.g., from a database),
+ * use {@link #registerAsyncTask(CompletableFuture)} to register the task. The proxy will
+ * wait for all registered async tasks to complete before proceeding with the login.</p>
+ *
  * <h2>Example Usage with LuckPerms</h2>
  * <pre>{@code
  * @Subscribe
- * public void onPermissionSetup(PermissionSetupEvent event) {
- *     // Players are handled separately
- *     if (event.getSubject() instanceof Player) {
+ * public void onPermissionSetup(PermissionSetupEvent e) {
+ *     if (!(e.getSubject() instanceof Player player)) {
  *         return;
  *     }
  *
- *     // Wrap the existing provider to monitor permission checks
- *     event.setProvider(new MonitoredPermissionProvider(event.getProvider()));
- * }
+ *     // Register an async task that loads user data
+ *     CompletableFuture<Void> loadTask = CompletableFuture.runAsync(() -> {
+ *         User user = loadUser(player.getUniqueId(), player.getUsername());
+ *         e.setProvider(new MyPermissionProvider(user));
+ *     }, asyncExecutor);
  *
- * @Subscribe(priority = EventPriority.LOW)
- * public void onPlayerPermissionSetup(PermissionSetupEvent event) {
- *     if (!(event.getSubject() instanceof Player player)) {
- *         return;
- *     }
- *
- *     User user = luckPerms.getUserManager().getUser(player.getUniqueId());
- *     if (user != null) {
- *         event.setProvider(subject -> permission -> {
- *             return Tristate.fromBoolean(user.getCachedData()
- *                 .getPermissionData().checkPermission(permission).asBoolean());
- *         });
- *     }
+ *     e.registerAsyncTask(loadTask);
  * }
  * }</pre>
  *
@@ -54,7 +50,8 @@ import java.util.Objects;
 public class PermissionSetupEvent {
 
     private final PermissionSubject subject;
-    private PermissionProvider provider;
+    private final AtomicReference<PermissionProvider> provider;
+    private final AtomicReference<CompletableFuture<Void>> asyncTask;
 
     /**
      * Creates a new permission setup event.
@@ -64,7 +61,8 @@ public class PermissionSetupEvent {
      */
     public PermissionSetupEvent(@Nonnull PermissionSubject subject, @Nonnull PermissionProvider defaultProvider) {
         this.subject = Objects.requireNonNull(subject, "subject");
-        this.provider = Objects.requireNonNull(defaultProvider, "defaultProvider");
+        this.provider = new AtomicReference<>(Objects.requireNonNull(defaultProvider, "defaultProvider"));
+        this.asyncTask = new AtomicReference<>(CompletableFuture.completedFuture(null));
     }
 
     /**
@@ -86,19 +84,49 @@ public class PermissionSetupEvent {
      */
     @Nonnull
     public PermissionProvider getProvider() {
-        return provider;
+        return provider.get();
     }
 
     /**
      * Sets the permission provider to use for this subject.
      *
      * <p>Permission plugins should call this to install their own
-     * permission checking logic.</p>
+     * permission checking logic. This method is thread-safe and can
+     * be called from async tasks.</p>
      *
      * @param provider the permission provider
      */
     public void setProvider(@Nonnull PermissionProvider provider) {
-        this.provider = Objects.requireNonNull(provider, "provider");
+        this.provider.set(Objects.requireNonNull(provider, "provider"));
+    }
+
+    /**
+     * Registers an async task that must complete before the login proceeds.
+     *
+     * <p>Use this method when you need to load permission data asynchronously.
+     * The proxy will wait for all registered tasks to complete before
+     * firing the LoginEvent.</p>
+     *
+     * <p>If multiple tasks are registered, they are combined with
+     * {@link CompletableFuture#allOf(CompletableFuture[])}.</p>
+     *
+     * @param task the async task to register
+     */
+    public void registerAsyncTask(@Nonnull CompletableFuture<Void> task) {
+        Objects.requireNonNull(task, "task");
+        asyncTask.updateAndGet(existing ->
+            existing.isDone() ? task : CompletableFuture.allOf(existing, task)
+        );
+    }
+
+    /**
+     * Gets the combined async task that must complete before proceeding.
+     *
+     * @return the async task, never null (completes immediately if no async work)
+     */
+    @Nonnull
+    public CompletableFuture<Void> getAsyncTask() {
+        return asyncTask.get();
     }
 
     /**
@@ -111,6 +139,6 @@ public class PermissionSetupEvent {
      */
     @Nonnull
     public PermissionFunction createFunction() {
-        return provider.createFunction(subject);
+        return provider.get().createFunction(subject);
     }
 }
