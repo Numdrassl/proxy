@@ -59,6 +59,10 @@ public final class ProxyCore {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ProxyCore.class);
 
+    private static final String[] ALPN_PROTOCOLS = {
+        "hytale/2", "hytale/1"
+    };
+
     // Configuration
     private final ProxyConfig config;
 
@@ -240,13 +244,10 @@ public final class ProxyCore {
             ch.close();
             return;
         }
-
         session.setClientStream(ch);
         ch.pipeline().addLast(new ProxyPacketDecoder("client", debugMode));
         ch.pipeline().addLast(new ProxyPacketEncoder("client", debugMode));
         ch.pipeline().addLast(new ClientPacketHandler(this, session));
-
-        LOGGER.debug("Session {}: Client stream initialized", session.getSessionId());
     }
 
     private void logBackendServers() {
@@ -268,7 +269,7 @@ public final class ProxyCore {
                 new File(config.getPrivateKeyPath()),
                 null,
                 new File(config.getCertificatePath()))
-            .applicationProtocols("hytale/1")
+            .applicationProtocols(ALPN_PROTOCOLS)
             .clientAuth(io.netty.handler.ssl.ClientAuth.REQUIRE)
             .trustManager(io.netty.handler.ssl.util.InsecureTrustManagerFactory.INSTANCE)
             .build();

@@ -55,7 +55,6 @@ public final class ClientPacketHandler extends SimpleChannelInboundHandler<Objec
                 session.getSessionId(), msg.getClass().getName());
             return;
         }
-
         dispatchPacket(packet);
     }
 
@@ -111,7 +110,6 @@ public final class ClientPacketHandler extends SimpleChannelInboundHandler<Objec
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        LOGGER.debug("Session {}: Client stream active", session.getSessionId());
         super.channelActive(ctx);
     }
 

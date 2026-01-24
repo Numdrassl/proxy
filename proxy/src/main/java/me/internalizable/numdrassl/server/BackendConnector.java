@@ -1,5 +1,6 @@
 package me.internalizable.numdrassl.server;
 
+import com.hypixel.hytale.protocol.HostAddress;
 import com.hypixel.hytale.protocol.packets.connection.Connect;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
@@ -112,7 +113,10 @@ public final class BackendConnector {
             this.sslContext = QuicSslContextBuilder.forClient()
                 .trustManager(io.netty.handler.ssl.util.InsecureTrustManagerFactory.INSTANCE)
                 .keyManager(keyFile, null, certFile)
-                .applicationProtocols("hytale/1")
+                .applicationProtocols(
+                    "hytale/10", "hytale/9", "hytale/8", "hytale/7", "hytale/6",
+                    "hytale/5", "hytale/4", "hytale/3", "hytale/2", "hytale/1"
+                )
                 .build();
         } catch (Exception e) {
             throw new IllegalStateException("Failed to create SSL context", e);
@@ -341,6 +345,8 @@ public final class BackendConnector {
             session.getSessionId(), backend.getName());
 
         Connect signedConnect = createSignedConnectPacket(session, connectPacket);
+        LOGGER.debug("Session {}: Writing Connect to backend stream - final check: protocolCrc={}, buildNumber={}, clientVersion='{}'",
+            session.getSessionId(), signedConnect.protocolCrc, signedConnect.protocolBuildNumber, signedConnect.clientVersion);
         stream.writeAndFlush(signedConnect);
         session.setState(SessionState.AUTHENTICATING);
 
@@ -360,6 +366,9 @@ public final class BackendConnector {
     // ==================== Signed Connect Packet ====================
 
     private Connect createSignedConnectPacket(ProxySession session, Connect original) {
+        LOGGER.debug("Session {}: Original Connect packet - protocolCrc={}, buildNumber={}, clientVersion='{}'",
+            session.getSessionId(), original.protocolCrc, original.protocolBuildNumber, original.clientVersion);
+
         String backendName = session.getCurrentBackend() != null
             ? session.getCurrentBackend().getName()
             : "unknown";
@@ -377,7 +386,28 @@ public final class BackendConnector {
 
         Connect proxyConnect = new Connect(original);
         proxyConnect.referralData = referralData;
+        proxyConnect.referralSource = createReferralSource();
+
+        LOGGER.debug("Session {}: Sending Connect to backend - protocolCrc={}, buildNumber={}, clientVersion='{}', uuid={}, username={}, referralSource={}:{}",
+            session.getSessionId(), proxyConnect.protocolCrc, proxyConnect.protocolBuildNumber,
+            proxyConnect.clientVersion, proxyConnect.uuid, proxyConnect.username,
+            proxyConnect.referralSource != null ? proxyConnect.referralSource.host : "null",
+            proxyConnect.referralSource != null ? proxyConnect.referralSource.port : 0);
+
         return proxyConnect;
+    }
+
+    /**
+     * Creates the referral source address pointing to this proxy.
+     * This allows the backend to know where the player was referred from.
+     */
+    private HostAddress createReferralSource() {
+        String host = proxyCore.getConfig().getPublicAddress();
+        if (host == null || host.isEmpty()) {
+            host = proxyCore.getConfig().getBindAddress();
+        }
+        int port = proxyCore.getConfig().getBindPort();
+        return new HostAddress(host, (short) port);
     }
 
     // ==================== Transfer Messages ====================

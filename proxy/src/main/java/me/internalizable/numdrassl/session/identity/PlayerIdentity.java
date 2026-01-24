@@ -18,16 +18,20 @@ public final class PlayerIdentity {
 
     private final UUID uuid;
     private final String username;
-    private final String protocolHash;
+    private final int protocolCrc;
+    private final int protocolBuildNumber;
+    private final String clientVersion;
     private final String identityToken;
     private final String language;
     private final ClientType clientType;
 
-    private PlayerIdentity(UUID uuid, String username, String protocolHash,
-                           String identityToken, String language, ClientType clientType) {
+    private PlayerIdentity(UUID uuid, String username, int protocolCrc, int protocolBuildNumber,
+                           String clientVersion, String identityToken, String language, ClientType clientType) {
         this.uuid = uuid;
         this.username = username;
-        this.protocolHash = protocolHash;
+        this.protocolCrc = protocolCrc;
+        this.protocolBuildNumber = protocolBuildNumber;
+        this.clientVersion = clientVersion;
         this.identityToken = identityToken;
         this.language = language;
         this.clientType = clientType;
@@ -45,7 +49,9 @@ public final class PlayerIdentity {
         return new PlayerIdentity(
             connect.uuid,
             connect.username,
-            connect.protocolHash,
+            connect.protocolCrc,
+            connect.protocolBuildNumber,
+            connect.clientVersion,
             connect.identityToken,
             connect.language,
             connect.clientType
@@ -57,7 +63,7 @@ public final class PlayerIdentity {
      */
     @Nonnull
     public static PlayerIdentity unknown() {
-        return new PlayerIdentity(null, null, null, null, null, null);
+        return new PlayerIdentity(null, null, 0, 0, null, null, null, null);
     }
 
     @Nullable
@@ -70,9 +76,32 @@ public final class PlayerIdentity {
         return username;
     }
 
+    /**
+     * Gets the protocol CRC from the client's Connect packet.
+     *
+     * @return the protocol CRC value
+     */
+    public int protocolCrc() {
+        return protocolCrc;
+    }
+
+    /**
+     * Gets the protocol build number from the client's Connect packet.
+     *
+     * @return the protocol build number
+     */
+    public int protocolBuildNumber() {
+        return protocolBuildNumber;
+    }
+
+    /**
+     * Gets the client version string from the Connect packet.
+     *
+     * @return the client version string, or null if not provided
+     */
     @Nullable
-    public String protocolHash() {
-        return protocolHash;
+    public String clientVersion() {
+        return clientVersion;
     }
 
     @Nullable

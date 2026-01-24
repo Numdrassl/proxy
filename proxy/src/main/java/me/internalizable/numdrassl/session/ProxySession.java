@@ -1,6 +1,7 @@
 package me.internalizable.numdrassl.session;
 
 import com.hypixel.hytale.protocol.Packet;
+import com.hypixel.hytale.protocol.packets.connection.ClientType;
 import com.hypixel.hytale.protocol.packets.connection.Connect;
 import com.hypixel.hytale.protocol.packets.interface_.ServerMessage;
 import io.netty.buffer.ByteBuf;
@@ -142,7 +143,7 @@ public final class ProxySession {
 
     @Nullable
     public String getProtocolHash() {
-        return identity.get().protocolHash();
+        return identity.get().clientVersion();
     }
 
     @Nullable
@@ -512,10 +513,14 @@ public final class ProxySession {
     private Connect createTransferConnect() {
         PlayerIdentity id = identity.get();
         Connect connect = new Connect();
-        connect.uuid = id.uuid();
-        connect.username = id.username();
-        connect.protocolHash = id.protocolHash();
+        connect.protocolCrc = id.protocolCrc();
+        connect.protocolBuildNumber = id.protocolBuildNumber();
+        connect.clientVersion = id.clientVersion() != null ? id.clientVersion() : "";
+        connect.uuid = id.uuid() != null ? id.uuid() : new UUID(0L, 0L);
+        connect.username = id.username() != null ? id.username() : "";
         connect.identityToken = id.identityToken();
+        connect.language = id.language() != null ? id.language() : "";
+        connect.clientType = id.clientType() != null ? id.clientType() : ClientType.Game;
         return connect;
     }
 
