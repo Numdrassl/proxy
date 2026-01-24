@@ -1,11 +1,16 @@
 # Numdrassl - Hytale QUIC Proxy Server
 
+[![Join Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/54VFfuyUE8)
 [![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Numdrassl/proxy?utm_source=oss&utm_medium=github&utm_campaign=Numdrassl%2Fproxy&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 [![Build Status](https://github.com/Numdrassl/proxy/actions/workflows/build.yml/badge.svg)](https://github.com/Numdrassl/proxy/actions/workflows/build.yml)
 [![Release](https://github.com/Numdrassl/proxy/actions/workflows/release.yml/badge.svg)](https://github.com/Numdrassl/proxy/actions/workflows/release.yml)
 ![Java](https://img.shields.io/badge/Java-25-orange)
 ![License](https://img.shields.io/badge/License-Proprietary-red)
 
+## Community
+
+ [![Discord](https://cdn.simpleicons.org/discord/5865F2) Join the Discord](https://discord.gg/54VFfuyUE8)
+ 
 A BungeeCord/Velocity-style proxy server for Hytale, built using Netty QUIC. Allows you to connect multiple backend servers, intercept packets, create plugins, and manage players across your network.
 
 ## Table of Contents
