@@ -832,8 +832,47 @@ Output locations:
 | `auth status` | Show current authentication status |
 | `auth logout` | Clear stored credentials |
 | `sessions` | List all connected sessions |
+| `metrics` | Show current performance metrics |
+| `metrics history` | Show historical averages |
+| `metrics peaks` | Show all-time peak values |
+| `metrics memory` | Show detailed memory statistics |
+| `metrics gc` | Trigger garbage collection |
+| `metrics report` | Generate shareable report |
 | `stop` | Gracefully shut down the proxy |
 | `help` | Show available commands |
+
+---
+
+## Monitoring & Profiling
+
+Numdrassl includes a built-in profiling system with HTTP endpoints:
+
+| Endpoint | URL | Description |
+|----------|-----|-------------|
+| Dashboard | http://localhost:9090/stats | Real-time HTML dashboard |
+| History | http://localhost:9090/history | Historical data & peaks |
+| Prometheus | http://localhost:9090/metrics | Prometheus scrape endpoint |
+| Report | http://localhost:9090/report | Shareable text report |
+| Health | http://localhost:9090/health | Health check (JSON) |
+
+### Key Metrics
+
+- **Sessions**: Active connections, accepted/closed counts
+- **Throughput**: Real-time packets/sec and bytes/sec
+- **Response Times**: Average response time, hanging request detection
+- **Historical Data**: Peak values, period averages (5min, 30min, 1hr)
+- **Memory**: JVM heap usage, GC stats
+- **Errors**: Auth failures, backend connection failures
+
+### Configuration
+
+```yaml
+metricsEnabled: true
+metricsPort: 9090
+metricsLogIntervalSeconds: 60
+```
+
+See [Profiling Guide](docs/PROFILING.md) for detailed documentation.
 
 ---
 
@@ -874,6 +913,7 @@ Enable `debugMode: true` in config for verbose packet logging.
 - [Event Architecture](docs/EVENT_ARCHITECTURE.md) - Internal event system details
 - [Cluster & Messaging](docs/CLUSTER_MESSAGING_ARCHITECTURE.md) - Multi-proxy cluster and Redis messaging
 - [Authentication Architecture](docs/AUTHENTICATION_ARCHITECTURE.md) - Auth flow documentation
+- [Profiling Guide](docs/PROFILING.md) - Monitoring, metrics, and performance troubleshooting
 
 ---
 

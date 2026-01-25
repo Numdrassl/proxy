@@ -24,6 +24,10 @@ import me.internalizable.numdrassl.pipeline.ClientPacketHandler;
 import me.internalizable.numdrassl.pipeline.codec.ProxyPacketDecoder;
 import me.internalizable.numdrassl.pipeline.codec.ProxyPacketEncoder;
 import me.internalizable.numdrassl.plugin.NumdrasslProxy;
+import me.internalizable.numdrassl.profiling.MetricsHistory;
+import me.internalizable.numdrassl.profiling.MetricsHttpServer;
+import me.internalizable.numdrassl.profiling.MetricsLogger;
+import me.internalizable.numdrassl.profiling.ProxyMetrics;
 import me.internalizable.numdrassl.server.ssl.CertificateGenerator;
 import me.internalizable.numdrassl.server.transfer.PlayerTransfer;
 import me.internalizable.numdrassl.server.transfer.ReferralManager;
@@ -81,6 +85,10 @@ public final class ProxyCore {
     // API layer
     private NumdrasslProxy apiProxy;
 
+    // Metrics
+    private MetricsHttpServer metricsServer;
+    private MetricsLogger metricsLogger;
+
     // State
     private volatile boolean running = false;
 
@@ -118,6 +126,7 @@ public final class ProxyCore {
         }
 
         logStartupInfo();
+        initializeMetrics();
         initializeAuthenticator();
 
         QuicSslContext sslContext = createSslContext();
@@ -149,6 +158,54 @@ public final class ProxyCore {
         LOGGER.info("Bind: {}:{}", config.getBindAddress(), config.getBindPort());
         LOGGER.info("Debug mode: {}", config.isDebugMode());
         LOGGER.info("Backend auth: Secret-based (HMAC referral)");
+    }
+
+    // ==================== Metrics ====================
+
+    private void initializeMetrics() {
+        if (!config.isMetricsEnabled()) {
+            LOGGER.info("Metrics disabled in configuration");
+            return;
+        }
+
+        try {
+            // Initialize the metrics singleton
+            ProxyMetrics metrics = ProxyMetrics.getInstance();
+            metrics.bindSessionManager(sessionManager);
+
+            // Initialize metrics history (continuous recording)
+            MetricsHistory.getInstance();
+
+            // Start metrics HTTP server
+            metricsServer = new MetricsHttpServer(config.getMetricsPort());
+            metricsServer.start();
+
+            // Start periodic logging if configured
+            int logInterval = config.getMetricsLogIntervalSeconds();
+            if (logInterval > 0) {
+                metricsLogger = new MetricsLogger(logInterval);
+                metricsLogger.start();
+            }
+
+            LOGGER.info("Metrics enabled - HTTP endpoint: http://localhost:{}/metrics", config.getMetricsPort());
+        } catch (Exception e) {
+            LOGGER.error("Failed to initialize metrics", e);
+        }
+    }
+
+    private void shutdownMetrics() {
+        if (metricsLogger != null) {
+            metricsLogger.stop();
+        }
+        if (metricsServer != null) {
+            metricsServer.stop();
+        }
+        // Shutdown metrics history
+        try {
+            MetricsHistory.getInstance().shutdown();
+        } catch (Exception e) {
+            LOGGER.warn("Error shutting down metrics history", e);
+        }
     }
 
     // ==================== Authentication ====================
@@ -222,12 +279,15 @@ public final class ProxyCore {
     private void handleNewConnection(QuicChannel quicChannel) {
         if (sessionManager.getSessionCount() >= config.getMaxConnections()) {
             LOGGER.warn("Max connections reached, rejecting connection");
+            ProxyMetrics.getInstance().recordConnectionRejected();
             quicChannel.close();
             return;
         }
 
         ProxySession session = new ProxySession(this, quicChannel);
         sessionManager.addSession(session);
+        ProxyMetrics.getInstance().recordConnectionAccepted();
+        ProxyMetrics.getInstance().incrementActiveSession();
 
         LOGGER.info("New connection from {} (Session {})",
             quicChannel.remoteAddress(), session.getSessionId());
@@ -308,6 +368,7 @@ public final class ProxyCore {
             apiProxy.getNumdrasslEventManager().fireSync(new ProxyShutdownEvent());
             apiProxy.shutdownApi();
         }
+        shutdownMetrics();
     }
 
     private void shutdownComponents() {

@@ -19,6 +19,7 @@ import me.internalizable.numdrassl.command.ConsoleCommandSource;
 import me.internalizable.numdrassl.command.NumdrasslCommandManager;
 import me.internalizable.numdrassl.command.builtin.AuthCommand;
 import me.internalizable.numdrassl.command.builtin.HelpCommand;
+import me.internalizable.numdrassl.command.builtin.MetricsCommand;
 import me.internalizable.numdrassl.command.builtin.NumdrasslCommand;
 import me.internalizable.numdrassl.command.builtin.ServerCommand;
 import me.internalizable.numdrassl.command.builtin.SessionsCommand;
@@ -163,6 +164,7 @@ public final class NumdrasslProxy implements ProxyServer {
         commandManager.register(this, new StopCommand(core), "shutdown", "end");
         commandManager.register(this, new ServerCommand(), "srv");
         commandManager.register(this, new NumdrasslCommand(), "nd", "proxy");
+        commandManager.register(this, new MetricsCommand(), "stats", "perf", "performance");
     }
 
     private void registerCommandListener() {

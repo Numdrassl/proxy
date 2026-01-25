@@ -3,6 +3,7 @@ package me.internalizable.numdrassl.session.channel;
 import com.hypixel.hytale.protocol.Packet;
 import io.netty.buffer.ByteBuf;
 import io.netty.incubator.codec.quic.QuicStreamChannel;
+import me.internalizable.numdrassl.profiling.ProxyMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,7 +42,11 @@ public final class PacketSender {
     public boolean sendToClient(@Nonnull Packet packet) {
         Objects.requireNonNull(packet, "packet");
         QuicStreamChannel stream = channels.clientStream();
-        return sendToStream(stream, packet, "client");
+        boolean result = sendToStream(stream, packet, "client");
+        if (result) {
+            ProxyMetrics.getInstance().recordPacketToClient(packet.getClass().getSimpleName(), 0);
+        }
+        return result;
     }
 
     /**
@@ -54,7 +59,12 @@ public final class PacketSender {
     public boolean sendToClient(@Nonnull ByteBuf data) {
         Objects.requireNonNull(data, "data");
         QuicStreamChannel stream = channels.clientStream();
-        return sendToStream(stream, data, "client");
+        int bytes = data.readableBytes();
+        boolean result = sendToStream(stream, data, "client");
+        if (result) {
+            ProxyMetrics.getInstance().recordPacketToClient("RawPacket", bytes);
+        }
+        return result;
     }
 
     // ==================== Send to Backend ====================
@@ -69,7 +79,11 @@ public final class PacketSender {
     public boolean sendToBackend(@Nonnull Packet packet) {
         Objects.requireNonNull(packet, "packet");
         QuicStreamChannel stream = channels.backendStream();
-        return sendToStream(stream, packet, "backend");
+        boolean result = sendToStream(stream, packet, "backend");
+        if (result) {
+            ProxyMetrics.getInstance().recordPacketToBackend(packet.getClass().getSimpleName(), 0);
+        }
+        return result;
     }
 
     /**
@@ -82,7 +96,12 @@ public final class PacketSender {
     public boolean sendToBackend(@Nonnull ByteBuf data) {
         Objects.requireNonNull(data, "data");
         QuicStreamChannel stream = channels.backendStream();
-        return sendToStream(stream, data, "backend");
+        int bytes = data.readableBytes();
+        boolean result = sendToStream(stream, data, "backend");
+        if (result) {
+            ProxyMetrics.getInstance().recordPacketToBackend("RawPacket", bytes);
+        }
+        return result;
     }
 
     // ==================== Internal ====================

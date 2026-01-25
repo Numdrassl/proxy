@@ -6,6 +6,7 @@ import com.hypixel.hytale.protocol.packets.connection.Disconnect;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import me.internalizable.numdrassl.profiling.ProxyMetrics;
 import me.internalizable.numdrassl.server.ProxyCore;
 import me.internalizable.numdrassl.session.ProxySession;
 import me.internalizable.numdrassl.session.SessionState;
@@ -37,6 +38,7 @@ public final class BackendPacketHandler extends SimpleChannelInboundHandler<Obje
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Object msg) throws Exception {
         if (msg instanceof ByteBuf raw) {
+            ProxyMetrics.getInstance().recordPacketFromBackend("RawPacket", raw.readableBytes());
             handleRawPacket(ctx, raw);
             return;
         }
@@ -47,6 +49,7 @@ public final class BackendPacketHandler extends SimpleChannelInboundHandler<Obje
             return;
         }
 
+        ProxyMetrics.getInstance().recordPacketFromBackend(packet.getClass().getSimpleName(), 0);
         dispatchPacket(packet);
     }
 
