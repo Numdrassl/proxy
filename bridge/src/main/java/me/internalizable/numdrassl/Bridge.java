@@ -119,12 +119,12 @@ public class Bridge extends JavaPlugin {
 
     private String getServerName() {
         String envServerName = System.getenv("NUMDRASSL_SERVERNAME");
-        if(envServerName != null && !envServerName.isEmpty()) {
+        if (envServerName != null && !envServerName.isEmpty()) {
             return envServerName;
         }
 
         String configServerName = config.get().getServerName();
-        if(configServerName != null && !configServerName.isEmpty()) {
+        if (configServerName != null && !configServerName.isEmpty()) {
             return configServerName;
         }
 
