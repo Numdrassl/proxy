@@ -841,10 +841,10 @@ Output locations:
 
 The Bridge plugin supports the following environment variables:
 
-| Command | Description |
-|---------|-------------|
+| Environment Variable   | Description |
+|------------------------|-------------|
 | `NUMDRASSL_SERVERNAME` | Overrides the serverName from the Bridge config. |
-| `NUMDRASSL_SECRET` | Overrides the shared secret from the Bridge config. |
+| `NUMDRASSL_SECRET`     | Overrides the shared secret from the Bridge config. |
 
 ---
 
