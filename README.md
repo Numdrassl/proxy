@@ -330,6 +330,15 @@ redisDatabase: 0
 
 Each backend server requires the Bridge plugin with matching `proxySecret`.
 
+### Proxy: Supported Environment Variables
+
+The Proxy supports the following environment variables:
+
+| Environment Variable   | Description                                       |
+|------------------------|---------------------------------------------------|
+| `NUMDRASSL_SECRET`     | Overrides the secret from the proxy config. |
+
+
 ### Cluster Configuration Notes
 
 > ⚠️ **Important Security Warnings:**
@@ -415,6 +424,15 @@ Block direct connections to your backend server from the internet. Only allow co
 iptables -A INPUT -p udp --dport 5520 -s 192.168.1.50 -j ACCEPT
 iptables -A INPUT -p udp --dport 5520 -j DROP
 ```
+
+### Bridge: Supported Environment Variables
+
+The Bridge plugin supports the following environment variables:
+
+| Environment Variable   | Description |
+|------------------------|-------------|
+| `NUMDRASSL_SERVERNAME` | Overrides the serverName from the Bridge config. |
+| `NUMDRASSL_SECRET`     | Overrides the shared secret from the Bridge config. |
 
 ---
 
@@ -834,17 +852,6 @@ Output locations:
 | `sessions` | List all connected sessions |
 | `stop` | Gracefully shut down the proxy |
 | `help` | Show available commands |
-
----
-
-## Bridge: Supported Environment Variables
-
-The Bridge plugin supports the following environment variables:
-
-| Environment Variable   | Description |
-|------------------------|-------------|
-| `NUMDRASSL_SERVERNAME` | Overrides the serverName from the Bridge config. |
-| `NUMDRASSL_SECRET`     | Overrides the shared secret from the Bridge config. |
 
 ---
 
