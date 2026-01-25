@@ -385,7 +385,7 @@ The plugin JAR is at: `bridge/build/libs/bridge-1.0-SNAPSHOT.jar`
 
 ### 2. Install on Backend Server
 
-Copy `bridge-1.0-SNAPSHOT.jar` to your Hytale server's `plugins/` directory.
+Copy `bridge-1.0-SNAPSHOT.jar` to your Hytale server's `mods/` directory.
 
 ### 3. Start Backend in Insecure Mode
 
@@ -834,6 +834,17 @@ Output locations:
 | `sessions` | List all connected sessions |
 | `stop` | Gracefully shut down the proxy |
 | `help` | Show available commands |
+
+---
+
+## Bridge: Supported Environment Variables
+
+The Bridge plugin supports the following environment variables:
+
+| Command | Description |
+|---------|-------------|
+| `NUMDRASSL_SERVERNAME` | Overrides the serverName from the Bridge config. |
+| `NUMDRASSL_SECRET` | Overrides the shared secret from the Bridge config. |
 
 ---
 
