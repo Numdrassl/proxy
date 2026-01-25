@@ -215,6 +215,13 @@ public final class ClientAuthenticationHandler {
         // This gives permission plugins time to load data between PermissionSetupEvent and LoginEvent
         fireLoginEvent();
 
+        // CRITICAL FIX: If the login event disconnected the player, STOP here.
+        // Do not attempt to connect to the backend server.
+        if (!session.isActive()) {
+            LOGGER.debug("Session {}: Login denied or disconnected during event handling. Aborting backend connection.", session.getSessionId());
+            return;
+        }
+
         onAuthenticationComplete.run();
     }
 
