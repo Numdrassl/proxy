@@ -128,7 +128,7 @@ public class Bridge extends JavaPlugin {
             return configServerName;
         }
 
-        getLogger().at(Level.WARNING).log("No proxy server name configured! Using default \"main\".");
+        getLogger().at(Level.WARNING).log("No server name configured! Using default \"main\".");
         return "main";
     }
 
