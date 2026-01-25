@@ -5,6 +5,7 @@ import com.hypixel.hytale.protocol.packets.auth.ClientReferral;
 import me.internalizable.numdrassl.api.player.TransferResult;
 import me.internalizable.numdrassl.config.BackendServer;
 import me.internalizable.numdrassl.server.ProxyCore;
+import me.internalizable.numdrassl.server.health.BackendHealthCache;
 import me.internalizable.numdrassl.session.ProxySession;
 import me.internalizable.numdrassl.session.SessionState;
 import org.slf4j.Logger;
@@ -50,7 +51,26 @@ public final class PlayerTransfer {
         Objects.requireNonNull(session, "session");
         Objects.requireNonNull(targetBackend, "targetBackend");
 
-        return CompletableFuture.completedFuture(executeTransfer(session, targetBackend));
+        BackendHealthCache cache = proxyCore.getBackendHealthCache();
+        if (cache == null) {
+            return CompletableFuture.completedFuture(
+                    TransferResult.failure("Internal error: backend health cache not initialized")
+            );
+        }
+
+        return cache
+                .get(targetBackend, () -> proxyCore.getBackendConnector().checkBackendAlive(targetBackend, 1500))
+                .thenApply(alive -> {
+                    if(!alive) {
+                        return TransferResult.failure("Server is offline!");
+                    }
+                    return executeTransfer(session, targetBackend);
+                })
+                .exceptionally(ex -> {
+                    LOGGER.warn("Backend ({}) is not reachable: {}", targetBackend.getName(), ex.toString());
+                    return TransferResult.failure("Server is offline!");
+                });
+
     }
 
     /**
