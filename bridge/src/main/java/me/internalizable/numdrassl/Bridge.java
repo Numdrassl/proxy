@@ -79,7 +79,7 @@ public class Bridge extends JavaPlugin {
                     buf,
                     event.getUuid(),
                     event.getUsername(),
-                    this.config.get().getServerName(),
+                    this.getServerName(),
                     secret
             );
 
@@ -115,6 +115,21 @@ public class Bridge extends JavaPlugin {
 
         getLogger().at(Level.WARNING).log("No proxy secret configured! Using random secret.");
         return RandomUtil.generateSecureRandomString(32).getBytes(StandardCharsets.UTF_8);
+    }
+
+    private String getServerName() {
+        String envServerName = System.getenv("NUMDRASSL_SERVERNAME");
+        if (envServerName != null && !envServerName.isEmpty()) {
+            return envServerName;
+        }
+
+        String configServerName = config.get().getServerName();
+        if (configServerName != null && !configServerName.isEmpty()) {
+            return configServerName;
+        }
+
+        getLogger().at(Level.WARNING).log("No server name configured! Using default \"main\".");
+        return "main";
     }
 
     /**
