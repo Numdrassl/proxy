@@ -1,5 +1,6 @@
 package me.internalizable.numdrassl.command.builtin;
 
+import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
 import me.internalizable.numdrassl.api.command.Command;
 import me.internalizable.numdrassl.api.command.CommandResult;
 import me.internalizable.numdrassl.api.command.CommandSource;
@@ -44,6 +45,13 @@ public class AuthCommand implements Command {
     @Override
     @Nonnull
     public CommandResult execute(@Nonnull CommandSource source, @Nonnull String[] args) {
+        if (source.isPlayer()) {
+            source.sendMessage(ChatMessageBuilder.create()
+                    .red("[X] ")
+                    .gray("This command can only be used from the console."));
+            return CommandResult.failure("This command can only be used from the console");
+        }
+
         if (args.length < 1) {
             source.sendMessage("Usage: " + getUsage());
             return CommandResult.success();

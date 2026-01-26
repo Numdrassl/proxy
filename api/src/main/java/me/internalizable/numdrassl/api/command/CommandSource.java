@@ -35,18 +35,23 @@ public interface CommandSource extends PermissionSubject {
      * @param builder the message builder
      */
     default void sendMessage(@Nonnull ChatMessageBuilder builder) {
-        if (this instanceof Player player) {
+        Optional<Player> playerOpt = this.asPlayer();
+
+        if (playerOpt.isPresent()) {
+            Player player = playerOpt.get();
             player.sendMessage(builder);
-        } else {
-            // Strip colors for console
-            StringBuilder sb = new StringBuilder();
-            for (FormattedMessagePart part : builder.getParts()) {
-                if (part.getText() != null) {
-                    sb.append(part.getText());
-                }
-            }
-            sendMessage(sb.toString());
+            return;
         }
+
+        // Console fallback: strip formatting and send plain text
+        StringBuilder sb = new StringBuilder();
+        for (FormattedMessagePart part : builder.getParts()) {
+            if (part.getText() != null) {
+                sb.append(part.getText());
+            }
+        }
+
+        sendMessage(sb.toString());
     }
 
     /**
@@ -68,7 +73,7 @@ public interface CommandSource extends PermissionSubject {
      * @return true if this is a player
      */
     default boolean isPlayer() {
-        return this instanceof Player;
+        return this.asPlayer().isPresent();
     }
 
     /**
