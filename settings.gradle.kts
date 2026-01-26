@@ -5,3 +5,5 @@ include("common")
 include("proxy")
 
 include("bridge")
+
+include("bridge-packets")
