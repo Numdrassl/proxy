@@ -1,6 +1,7 @@
 package me.internalizable.numdrassl.server;
 
 import com.hypixel.hytale.protocol.HostAddress;
+import com.hypixel.hytale.protocol.Packet;
 import com.hypixel.hytale.protocol.packets.connection.Connect;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
@@ -16,6 +17,7 @@ import io.netty.incubator.codec.quic.QuicStreamType;
 import me.internalizable.numdrassl.common.SecretMessageUtil;
 import me.internalizable.numdrassl.config.BackendServer;
 import me.internalizable.numdrassl.event.packet.ProxyPing;
+import me.internalizable.numdrassl.event.packet.ProxyPong;
 import me.internalizable.numdrassl.pipeline.BackendPacketHandler;
 import me.internalizable.numdrassl.pipeline.codec.ProxyPacketDecoder;
 import me.internalizable.numdrassl.pipeline.codec.ProxyPacketEncoder;
@@ -453,8 +455,21 @@ public final class BackendConnector {
                             protected void initChannel(QuicStreamChannel ch) {
                                 boolean debugMode = proxyCore.getConfig().isDebugMode();
 
-                                ch.pipeline().addLast(new ProxyPacketDecoder("backend-alive-check", debugMode));
-                                ch.pipeline().addLast(new ProxyPacketEncoder("backend-alive-check", debugMode));
+                                ch.pipeline().addLast(new ProxyPacketDecoder("backend-ping", debugMode));
+                                ch.pipeline().addLast(new ProxyPacketEncoder("backend-ping", debugMode));
+
+                                ch.pipeline().addLast(new SimpleChannelInboundHandler<Packet>() {
+                                    @Override
+                                    protected void channelRead0(ChannelHandlerContext ctx, Packet packet) {
+                                        if (packet instanceof ProxyPong) {
+                                            if (!future.isDone()) {
+                                                future.complete(true);
+                                            }
+                                            ctx.close();
+                                            return;
+                                        }
+                                    }
+                                });
                             }
                         }).addListener(streamFuture -> {
                             if (!streamFuture.isSuccess()) {
@@ -476,10 +491,6 @@ public final class BackendConnector {
                                     if (future.complete(false)) {
                                         stream.close();
                                     }
-                                } else if (future.complete(true)) {
-                                    // TODO: implement proxy pong packet in bridge
-                                    // currently only with transform and early plugin possible to register custom packet on backend side
-                                    stream.close();
                                 }
                             });
                         });
