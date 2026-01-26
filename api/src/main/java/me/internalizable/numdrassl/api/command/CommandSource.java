@@ -73,7 +73,7 @@ public interface CommandSource extends PermissionSubject {
      * @return true if this is a player
      */
     default boolean isPlayer() {
-        return this instanceof Player;
+        return this.asPlayer().isPresent();
     }
 
     /**
