@@ -53,8 +53,6 @@ public class ServerCommand implements Command {
             return listServers(source, proxy);
         }
 
-        System.out.println("Args Length >> " + args.length);
-
         // Has target-player argument - transfer target to server
         if (args.length > 1) {
             // Find target player
