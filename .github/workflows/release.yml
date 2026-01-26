@@ -50,6 +50,7 @@ jobs:
           ls -la proxy/build/libs/ || { echo "ERROR: proxy artifacts missing"; exit 1; }
           ls -la api/build/libs/ || { echo "ERROR: api artifacts missing"; exit 1; }
           ls -la bridge/build/libs/ || { echo "ERROR: bridge artifacts missing"; exit 1; }
+          ls -la bridge-packets/build/libs/ || { echo "ERROR: bridge-packets artifacts missing"; exit 1; }
 
       - name: Get Hytale server versions from gradle.properties
         id: hytale_version
@@ -151,6 +152,14 @@ jobs:
             esac
           done
           
+          # Copy bridge-packets jars excluding javadoc and sources
+          for jar in bridge-packets/build/libs/bridge-packets-*.jar; do
+            case "$jar" in
+              *-javadoc.jar|*-sources.jar) continue ;;
+              *) cp "$jar" release/ ;;
+            esac
+          done
+          
           echo "Release artifacts:"
           ls -la release/
           
@@ -192,6 +201,7 @@ jobs:
             | `proxy-*.jar` | Main proxy server |
             | `api-*.jar` | Plugin API (for plugin developers) |
             | `bridge-*.jar` | Backend server plugin (install on Hytale servers) |
+            | `bridge-packets-*.jar` | Backend server earlyplugin (install on Hytale servers) |
 
             ---
 
@@ -205,9 +215,11 @@ jobs:
             ### 🔌 Backend Setup
 
             1. Download `bridge-*.jar`
-            2. Place in your Hytale server's `plugins/` folder
-            3. Start server with `--auth-mode insecure --transport QUIC`
-            4. Configure matching `SecretKey` in both proxy and bridge configs
+            2. Place in your Hytale server's `mods/` folder
+            3. Download `bridge-packets-*.jar`
+            4. Put the file into your Hytale server’s `earlyplugins/` folder (create it if it doesn’t exist).
+            5. Start server with `--auth-mode insecure --transport QUIC --accept-early-plugins`
+            6. Configure matching `SecretKey` in both proxy and bridge configs 
 
           draft: false
           prerelease: ${{ steps.release_type.outputs.prerelease }}

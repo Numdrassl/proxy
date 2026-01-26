@@ -20,6 +20,9 @@ import com.hypixel.hytale.protocol.packets.connection.Pong;
 import com.hypixel.hytale.protocol.packets.interface_.ChatMessage;
 import com.hypixel.hytale.protocol.packets.interface_.ServerMessage;
 import io.netty.buffer.ByteBuf;
+import me.internalizable.numdrassl.event.packet.ProxyPing;
+import me.internalizable.numdrassl.event.packet.ProxyPong;
+
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -76,6 +79,8 @@ public final class PacketRegistry {
         PacketRegistry.register(18, "ClientReferral", ClientReferral.class, 1, 5141, false, ClientReferral::validateStructure, ClientReferral::deserialize);
         PacketRegistry.register(210, "ServerMessage", ServerMessage.class, 2, 0x64000000, false, ServerMessage::validateStructure, ServerMessage::deserialize);
         PacketRegistry.register(211, "ChatMessage", ChatMessage.class, 1, 16384006, false, ChatMessage::validateStructure, ChatMessage::deserialize);
+        PacketRegistry.register(998, "ProxyPing", ProxyPing.class, 16, 16, false, ProxyPing::validateStructure, ProxyPing::deserialize);
+        PacketRegistry.register(999, "ProxyPong", ProxyPong.class, 16, 16, false, ProxyPong::validateStructure, ProxyPong::deserialize);
     }
 
     public record PacketInfo(int id, @Nonnull String name, @Nonnull Class<? extends Packet> type, int fixedBlockSize, int maxSize, boolean compressed, @Nonnull BiFunction<ByteBuf, Integer, ValidationResult> validate, @Nonnull BiFunction<ByteBuf, Integer, Packet> deserialize) {

@@ -4,6 +4,7 @@ import com.hypixel.hytale.protocol.packets.auth.AuthGrant;
 import com.hypixel.hytale.protocol.packets.auth.AuthToken;
 import com.hypixel.hytale.protocol.packets.auth.ServerAuthToken;
 import com.hypixel.hytale.protocol.packets.connection.Connect;
+import me.internalizable.numdrassl.api.event.connection.AsyncLoginEvent;
 import me.internalizable.numdrassl.auth.ProxyAuthenticator;
 import me.internalizable.numdrassl.server.ProxyCore;
 import me.internalizable.numdrassl.session.ProxySession;
@@ -207,16 +208,59 @@ public final class ClientAuthenticationHandler {
         return null;
     }
 
+    /**
+     * Completes the client authentication flow and initiates the asynchronous login barrier.
+     *
+     * <p>This method sends the success token to the client immediately to satisfy the handshake protocol,
+     * but internally holds the connection state until all plugins verify the session via
+     * {@link AsyncLoginEvent}.</p>
+     *
+     * @param serverAccessToken The access token verified by the central auth server.
+     */
     private void completeAuthentication(String serverAccessToken) {
+        // 1. Send success packet to client immediately to prevent protocol timeouts
         ServerAuthToken serverAuthToken = new ServerAuthToken(serverAccessToken, null);
         session.sendToClient(serverAuthToken);
 
-        // Fire LoginEvent now that authentication is complete
-        // This gives permission plugins time to load data between PermissionSetupEvent and LoginEvent
-        fireLoginEvent();
+        // 2. Get lifecycle handler
+        var apiProxy = proxyCore.getApiProxy();
+        if (apiProxy == null) {
+            LOGGER.error("Session {}: API Proxy not initialized during login sequence",
+                    session.getSessionId());
+            session.disconnect("Internal Proxy Error: API Bridge unavailable");
+            return;
+        }
 
-        // CRITICAL FIX: If the login event disconnected the player, STOP here.
-        // Do not attempt to connect to the backend server.
+        var lifecycleHandler = apiProxy.getEventBridge().getLifecycleHandler();
+
+        // 3. Execute async login phase (delegates all async barrier logic)
+        lifecycleHandler.onAsyncLogin(session)
+                .thenAccept(result -> {
+
+                    if (!result.isAllowed()) {
+                        String denyReason = result.getDenyReason();
+                        session.disconnect(denyReason != null ? denyReason : "Connection denied by proxy");
+                        return;
+                    }
+
+                    // Fire LoginEvent now that authentication is complete
+                    // This gives permission plugins time to load data between PermissionSetupEvent and LoginEvent
+                    fireLoginEvent();
+
+                    onAuthenticationComplete.run();
+                })
+                .exceptionally(ex -> {
+                    LOGGER.error("Session {}: Async login phase failed", session.getSessionId(), ex);
+
+                    // Determine appropriate disconnect message based on exception type
+                    String disconnectMessage = ex instanceof IllegalStateException
+                            ? ex.getMessage()
+                            : "Internal Server Error: Data loading failed";
+
+                    session.disconnect(disconnectMessage);
+                    return null;
+                });
+
         if (!session.isActive()) {
             LOGGER.debug("Session {}: Login denied or disconnected during event handling. Aborting backend connection.", session.getSessionId());
             return;

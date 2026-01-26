@@ -1,12 +1,10 @@
 package me.internalizable.numdrassl.server;
 
 import com.hypixel.hytale.protocol.HostAddress;
+import com.hypixel.hytale.protocol.Packet;
 import com.hypixel.hytale.protocol.packets.connection.Connect;
 import io.netty.bootstrap.Bootstrap;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelHandler;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.EventLoopGroup;
+import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.incubator.codec.quic.QuicChannel;
@@ -18,6 +16,8 @@ import io.netty.incubator.codec.quic.QuicStreamChannel;
 import io.netty.incubator.codec.quic.QuicStreamType;
 import me.internalizable.numdrassl.common.SecretMessageUtil;
 import me.internalizable.numdrassl.config.BackendServer;
+import me.internalizable.numdrassl.event.packet.ProxyPing;
+import me.internalizable.numdrassl.event.packet.ProxyPong;
 import me.internalizable.numdrassl.pipeline.BackendPacketHandler;
 import me.internalizable.numdrassl.pipeline.codec.ProxyPacketDecoder;
 import me.internalizable.numdrassl.pipeline.codec.ProxyPacketEncoder;
@@ -39,6 +39,7 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.Base64;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -412,6 +413,101 @@ public final class BackendConnector {
         int port = proxyCore.getConfig().getBindPort();
         return new HostAddress(host, (short) port);
     }
+
+    public CompletableFuture<Boolean> checkBackendAlive(BackendServer backend, long timeoutMs) {
+        Objects.requireNonNull(backend, "backend");
+        CompletableFuture<Boolean> future = new CompletableFuture<>();
+
+        InetSocketAddress address = new InetSocketAddress(backend.getHost(), backend.getPort());
+
+        Bootstrap bootstrap = createBootstrap();
+        bootstrap.bind(0).addListener((ChannelFutureListener) bindFuture -> {
+            if (!bindFuture.isSuccess()) {
+                future.complete(false);
+                return;
+            }
+
+            Channel datagramChannel = bindFuture.channel();
+
+            datagramChannel.eventLoop().schedule(() -> {
+                if (future.complete(false)) {
+                    datagramChannel.close();
+                }
+            }, timeoutMs, TimeUnit.MILLISECONDS);
+
+            QuicChannel.newBootstrap(datagramChannel)
+                    .remoteAddress(address)
+                    .streamHandler(new ChannelInitializer<QuicStreamChannel>() {
+                        @Override
+                        protected void initChannel(QuicStreamChannel ch) throws Exception {
+                        }
+                    })
+                    .connect()
+                    .addListener(connectFuture -> {
+                        if (!connectFuture.isSuccess()) {
+                            if (future.complete(false)) {
+                                datagramChannel.close();
+                            }
+                            return;
+                        }
+
+                        QuicChannel quicChannel = (QuicChannel) connectFuture.getNow();
+
+                        quicChannel.createStream(QuicStreamType.BIDIRECTIONAL, new ChannelInitializer<QuicStreamChannel>() {
+                            @Override
+                            protected void initChannel(QuicStreamChannel ch) {
+                                boolean debugMode = proxyCore.getConfig().isDebugMode();
+
+                                ch.pipeline().addLast(new ProxyPacketDecoder("backend-ping", debugMode));
+                                ch.pipeline().addLast(new ProxyPacketEncoder("backend-ping", debugMode));
+
+                                ch.pipeline().addLast(new SimpleChannelInboundHandler<Packet>() {
+                                    @Override
+                                    protected void channelRead0(ChannelHandlerContext ctx, Packet packet) {
+                                        if (packet instanceof ProxyPong) {
+                                            if (!future.isDone()) {
+                                                future.complete(true);
+                                            }
+                                            ctx.close();
+                                            return;
+                                        }
+                                    }
+                                });
+                            }
+                        }).addListener(streamFuture -> {
+                            if (!streamFuture.isSuccess()) {
+                                if (future.complete(false)) {
+                                    quicChannel.eventLoop().execute(() -> quicChannel.close());
+                                    datagramChannel.close();
+                                }
+                                return;
+                            }
+
+                            QuicStreamChannel stream = (QuicStreamChannel) streamFuture.getNow();
+
+                            ProxyPing ping = new ProxyPing();
+                            ping.timestamp = System.currentTimeMillis();
+                            ping.nonce = new SecureRandom().nextLong();
+
+                            stream.writeAndFlush(ping).addListener(writeFuture -> {
+                                if (!writeFuture.isSuccess()) {
+                                    if (future.complete(false)) {
+                                        stream.close();
+                                    }
+                                }
+                            });
+                        });
+
+                        future.whenComplete((ok, err) -> {
+                            quicChannel.eventLoop().execute(quicChannel::close);
+                            datagramChannel.close();
+                        });
+                    });
+        });
+
+        return future;
+    }
+
 
     // ==================== Transfer Messages ====================
 

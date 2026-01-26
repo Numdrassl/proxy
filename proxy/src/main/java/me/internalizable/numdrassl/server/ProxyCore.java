@@ -28,6 +28,7 @@ import me.internalizable.numdrassl.profiling.MetricsHistory;
 import me.internalizable.numdrassl.profiling.MetricsHttpServer;
 import me.internalizable.numdrassl.profiling.MetricsLogger;
 import me.internalizable.numdrassl.profiling.ProxyMetrics;
+import me.internalizable.numdrassl.server.health.BackendHealthCache;
 import me.internalizable.numdrassl.server.ssl.CertificateGenerator;
 import me.internalizable.numdrassl.server.transfer.PlayerTransfer;
 import me.internalizable.numdrassl.server.transfer.ReferralManager;
@@ -77,6 +78,7 @@ public final class ProxyCore {
     private final ProxyAuthenticator authenticator;
     private final ReferralManager referralManager;
     private final PlayerTransfer playerTransfer;
+    private final BackendHealthCache backendHealthCache;
 
     // Networking
     private EventLoopGroup eventLoopGroup;
@@ -101,6 +103,7 @@ public final class ProxyCore {
         this.backendConnector = new BackendConnector(this);
         this.referralManager = new ReferralManager(this);
         this.playerTransfer = new PlayerTransfer(this);
+        this.backendHealthCache = new BackendHealthCache();
         this.authenticator = createAuthenticator();
     }
 
@@ -431,4 +434,7 @@ public final class ProxyCore {
     public NumdrasslProxy getApiProxy() {
         return apiProxy;
     }
+
+    @Nullable
+    public BackendHealthCache getBackendHealthCache() { return backendHealthCache; }
 }

@@ -3,6 +3,8 @@ package me.internalizable.numdrassl.session;
 import com.hypixel.hytale.protocol.Packet;
 import com.hypixel.hytale.protocol.packets.connection.ClientType;
 import com.hypixel.hytale.protocol.packets.connection.Connect;
+import com.hypixel.hytale.protocol.packets.connection.Disconnect;
+import com.hypixel.hytale.protocol.packets.connection.DisconnectType;
 import com.hypixel.hytale.protocol.packets.interface_.ServerMessage;
 import io.netty.buffer.ByteBuf;
 import io.netty.incubator.codec.quic.QuicChannel;
@@ -434,7 +436,15 @@ public final class ProxySession {
         LOGGER.info("Session {} disconnecting: {}", id, reason);
 
         state.set(SessionState.DISCONNECTED);
-        channels.closeAll();
+
+        QuicStreamChannel stream = channels.clientStream();
+        if (stream != null && stream.isActive()) {
+            Disconnect packet = new Disconnect(reason, DisconnectType.Disconnect);
+            stream.writeAndFlush(packet).addListener(future -> channels.closeAll());
+        } else {
+            channels.closeAll();
+        }
+
         proxyCore.getSessionManager().removeSession(this);
     }
 
