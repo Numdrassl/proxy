@@ -34,6 +34,7 @@ jobs:
           ls -la proxy/build/libs/ || { echo "ERROR: proxy artifacts missing"; exit 1; }
           ls -la api/build/libs/ || { echo "ERROR: api artifacts missing"; exit 1; }
           ls -la bridge/build/libs/ || { echo "ERROR: bridge artifacts missing"; exit 1; }
+          ls -la bridge-packets/build/libs/ || { echo "ERROR: bridge-packets artifacts missing"; exit 1; }
 
       - name: Sanitize ref name for artifact
         id: sanitize
@@ -67,5 +68,12 @@ jobs:
         with:
           name: bridge-${{ steps.sanitize.outputs.safe_ref }}
           path: bridge/build/libs/*.jar
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload bridge-packets artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bridge-packets-${{ steps.sanitize.outputs.safe_ref }}
+          path: bridge-packets/build/libs/*.jar
           retention-days: 7
           if-no-files-found: error
