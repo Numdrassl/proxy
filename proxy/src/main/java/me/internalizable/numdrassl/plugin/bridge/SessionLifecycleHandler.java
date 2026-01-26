@@ -1,5 +1,6 @@
 package me.internalizable.numdrassl.plugin.bridge;
 
+import me.internalizable.numdrassl.api.event.connection.AsyncLoginEvent;
 import me.internalizable.numdrassl.api.event.connection.DisconnectEvent;
 import me.internalizable.numdrassl.api.event.connection.PostLoginEvent;
 import me.internalizable.numdrassl.api.event.connection.PreLoginEvent;
@@ -20,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
@@ -115,6 +117,74 @@ public final class SessionLifecycleHandler {
 
         // Set up permissions (fires PermissionSetupEvent and waits for async tasks)
         return player.setupPermissions().thenApply(v -> player);
+    }
+
+    /**
+     * Handles asynchronous login phase after authentication completes.
+     *
+     * <p>This method fires the {@link AsyncLoginEvent} and manages the async barrier pattern,
+     * allowing plugins to register {@link CompletableFuture} tasks for data loading (e.g.,
+     * permissions, database queries) before the player fully joins.</p>
+     *
+     * @param session the authenticated session
+     * @return a CompletableFuture that completes with the AsyncLoginEvent result when all
+     * async tasks finish, or completes exceptionally on failure
+     */
+    @Nonnull
+    public CompletableFuture<AsyncLoginEvent.AsyncLoginResult> onAsyncLogin(@Nonnull ProxySession session) {
+        Objects.requireNonNull(session, "session");
+
+        // 1. Prepare the Cached Player instance
+        Player player = getOrCreatePlayer(session);
+        if (player == null) {
+            CompletableFuture<AsyncLoginEvent.AsyncLoginResult> future = new CompletableFuture<>();
+            future.completeExceptionally(new IllegalStateException("Player initialization failed: Session cache invalid"));
+            return future;
+        }
+
+        // 2. Instantiate and fire the AsyncLoginEvent
+        AsyncLoginEvent asyncEvent = new AsyncLoginEvent(player);
+        eventManager.fireSync(asyncEvent);
+
+        // 3. Handle Async Barriers (Synchronization Barrier Pattern)
+        List<CompletableFuture<?>> tasks = asyncEvent.getLoginTasks();
+
+        if (tasks.isEmpty()) {
+            // Fast Path: No plugins requested a wait. Return immediately with result.
+            LOGGER.debug("Session {}: No async login tasks registered, proceeding immediately",
+                    session.getSessionId());
+            return CompletableFuture.completedFuture(asyncEvent.getResult());
+        }
+
+        // Slow Path: Wait for all registered futures (e.g., Database, API calls) to complete.
+        LOGGER.info("Session {}: Waiting for {} async login tasks...",
+                session.getSessionId(), tasks.size());
+
+        CompletableFuture<AsyncLoginEvent.AsyncLoginResult> resultFuture = new CompletableFuture<>();
+
+        CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0]))
+                .whenComplete((v, ex) -> {
+                    if (ex != null) {
+                        LOGGER.error("Session {}: Async login task failed unexpectedly",
+                                session.getSessionId(), ex);
+                        resultFuture.completeExceptionally(ex);
+                        return;
+                    }
+
+                    if (!session.isActive()) {
+                        LOGGER.debug("Session {}: Client disconnected during async wait. Aborting login.",
+                                session.getSessionId());
+                        resultFuture.completeExceptionally(
+                                new IllegalStateException("Session closed during async login"));
+                        return;
+                    }
+
+                    LOGGER.debug("Session {}: All {} async login tasks completed successfully",
+                            session.getSessionId(), tasks.size());
+                    resultFuture.complete(asyncEvent.getResult());
+                });
+
+        return resultFuture;
     }
 
     /**

@@ -330,6 +330,15 @@ redisDatabase: 0
 
 Each backend server requires the Bridge plugin with matching `proxySecret`.
 
+### Proxy: Supported Environment Variables
+
+The Proxy supports the following environment variables:
+
+| Environment Variable   | Description                                       |
+|------------------------|---------------------------------------------------|
+| `NUMDRASSL_SECRET`     | Overrides the secret from the proxy config. |
+
+
 ### Cluster Configuration Notes
 
 > ⚠️ **Important Security Warnings:**
@@ -385,7 +394,7 @@ The plugin JAR is at: `bridge/build/libs/bridge-1.0-SNAPSHOT.jar`
 
 ### 2. Install on Backend Server
 
-Copy `bridge-1.0-SNAPSHOT.jar` to your Hytale server's `plugins/` directory.
+Copy `bridge-1.0-SNAPSHOT.jar` to your Hytale server's `mods/` directory.
 
 ### 3. Start Backend in Insecure Mode
 
@@ -415,6 +424,15 @@ Block direct connections to your backend server from the internet. Only allow co
 iptables -A INPUT -p udp --dport 5520 -s 192.168.1.50 -j ACCEPT
 iptables -A INPUT -p udp --dport 5520 -j DROP
 ```
+
+### Bridge: Supported Environment Variables
+
+The Bridge plugin supports the following environment variables:
+
+| Environment Variable   | Description |
+|------------------------|-------------|
+| `NUMDRASSL_SERVERNAME` | Overrides the serverName from the Bridge config. |
+| `NUMDRASSL_SECRET`     | Overrides the shared secret from the Bridge config. |
 
 ---
 
@@ -826,14 +844,15 @@ Output locations:
 
 ## Console Commands
 
-| Command | Description |
-|---------|-------------|
+| Command      | Description                            |
+|--------------|----------------------------------------|
 | `auth login` | Start OAuth device flow authentication |
-| `auth status` | Show current authentication status |
-| `auth logout` | Clear stored credentials |
-| `sessions` | List all connected sessions |
-| `stop` | Gracefully shut down the proxy |
-| `help` | Show available commands |
+| `auth status` | Show current authentication status     |
+| `auth logout` | Clear stored credentials               |
+| `sessions`   | List all connected sessions            |
+| `server`     | List all registered backend servers    |
+| `stop`       | Gracefully shut down the proxy         |
+| `help`       | Show available commands                |
 
 ---
 

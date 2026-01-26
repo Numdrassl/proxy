@@ -17,12 +17,7 @@ import me.internalizable.numdrassl.cluster.NumdrasslClusterManager;
 import me.internalizable.numdrassl.command.CommandEventListener;
 import me.internalizable.numdrassl.command.ConsoleCommandSource;
 import me.internalizable.numdrassl.command.NumdrasslCommandManager;
-import me.internalizable.numdrassl.command.builtin.AuthCommand;
-import me.internalizable.numdrassl.command.builtin.HelpCommand;
-import me.internalizable.numdrassl.command.builtin.NumdrasslCommand;
-import me.internalizable.numdrassl.command.builtin.ServerCommand;
-import me.internalizable.numdrassl.command.builtin.SessionsCommand;
-import me.internalizable.numdrassl.command.builtin.StopCommand;
+import me.internalizable.numdrassl.command.builtin.*;
 import me.internalizable.numdrassl.event.api.NumdrasslEventManager;
 import me.internalizable.numdrassl.messaging.local.LocalMessagingService;
 import me.internalizable.numdrassl.messaging.redis.RedisMessagingService;
@@ -162,6 +157,7 @@ public final class NumdrasslProxy implements ProxyServer {
         commandManager.register(this, new SessionsCommand(core));
         commandManager.register(this, new StopCommand(core), "shutdown", "end");
         commandManager.register(this, new ServerCommand(), "srv");
+        commandManager.register(this, new FindCommand(), "find-server");
         commandManager.register(this, new NumdrasslCommand(), "nd", "proxy");
     }
 

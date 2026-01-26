@@ -3,12 +3,16 @@ package me.internalizable.numdrassl.config;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
+import org.yaml.snakeyaml.introspector.PropertyUtils;
 
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Configuration for the Numdrassl Proxy.
@@ -30,8 +34,8 @@ public class ProxyConfig {
     private int connectionTimeoutSeconds = 30;
 
     // Debug options
-    private boolean debugMode = false;
-    private boolean passthroughMode = false;
+    private Boolean debugMode = false;
+    private Boolean passthroughMode = false;
 
     // Backend authentication
     private String proxySecret = null;
@@ -40,14 +44,16 @@ public class ProxyConfig {
     private List<BackendServer> backends = new ArrayList<>();
 
     // Cluster/Redis configuration
-    private boolean clusterEnabled = false;
+    private Boolean clusterEnabled = false;
     private String proxyId = null;
     private String proxyRegion = "default";
     private String redisHost = "localhost";
     private int redisPort = 6379;
     private String redisPassword = null;
-    private boolean redisSsl = false;
+    private Boolean redisSsl = false;
     private int redisDatabase = 0;
+
+    private static SecureRandom SECRET_RANDOM = new SecureRandom();
 
     public ProxyConfig() {
         // Default backend
@@ -59,18 +65,31 @@ public class ProxyConfig {
     public static ProxyConfig load(Path path) throws IOException {
         if (!Files.exists(path)) {
             ProxyConfig config = new ProxyConfig();
+            config.applyDefaults();
             config.save(path);
             return config;
         }
 
         LoaderOptions options = new LoaderOptions();
-        Yaml yaml = new Yaml(new Constructor(ProxyConfig.class, options));
+        Constructor constructor = new Constructor(ProxyConfig.class, options);
+
+        PropertyUtils propertyUtils = new PropertyUtils();
+        propertyUtils.setSkipMissingProperties(true);
+        constructor.setPropertyUtils(propertyUtils);
+
+        Yaml yaml = new Yaml(constructor);
+
         try (InputStream is = Files.newInputStream(path)) {
             ProxyConfig config = yaml.load(is);
             // Ensure defaults for fields that might not exist in older configs
             if (config == null) {
                 config = new ProxyConfig();
             }
+
+            if (config.applyDefaults()) {
+                config.save(path);
+            }
+
             return config;
         }
     }
@@ -158,6 +177,96 @@ public class ProxyConfig {
         }
     }
 
+    private boolean applyDefaults() {
+        boolean changed = false;
+
+        if (bindAddress == null) {
+            bindAddress = "0.0.0.0";
+            changed = true;
+        }
+        if (bindPort == 0) {
+            bindPort = 24322;
+            changed = true;
+        }
+
+        if (certificatePath == null) {
+            certificatePath = "certs/server.crt";
+            changed = true;
+        }
+        if (privateKeyPath == null) {
+            privateKeyPath = "certs/server.key";
+            changed = true;
+        }
+
+        if (maxConnections <= 0) {
+            maxConnections = 1000;
+            changed = true;
+        }
+        if (connectionTimeoutSeconds <= 0) {
+            connectionTimeoutSeconds = 30;
+            changed = true;
+        }
+
+        if (debugMode == null) {
+            debugMode = false;
+            changed = true;
+        }
+
+        if (passthroughMode == null) {
+            passthroughMode = false;
+            changed = true;
+        }
+
+        if (proxySecret == null || proxySecret.isBlank()) {
+            proxySecret = generateProxySecret();
+            changed = true;
+        }
+
+        if (backends == null) backends = new ArrayList<>();
+        if (backends.isEmpty()) {
+            backends.add(new BackendServer("lobby", "127.0.0.1", 5520, true));
+            changed = true;
+        }
+
+        if (clusterEnabled == null) {
+            clusterEnabled = false;
+            changed = true;
+        }
+
+        if (proxyId == null) {
+            proxyId = UUID.randomUUID().toString();
+            changed = true;
+        }
+
+        if (proxyRegion == null || proxyRegion.isBlank()) {
+            proxyRegion = "default";
+            changed = true;
+        }
+        if (redisHost == null || redisHost.isBlank()) {
+            redisHost = "localhost";
+            changed = true;
+        }
+
+        if (redisSsl == null) {
+            redisSsl = false;
+            changed = true;
+        }
+
+        if (redisPort == 0) {
+            redisPort = 6379;
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    private static String generateProxySecret() {
+        byte[] bytes = new byte[32]; // 256-bit
+
+        SECRET_RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
     /**
      * Formats a value for YAML output.
      * Returns "null" for null values, or quoted string otherwise.
@@ -168,92 +277,192 @@ public class ProxyConfig {
 
     // ==================== Network Getters/Setters ====================
 
-    public String getBindAddress() { return bindAddress; }
-    public void setBindAddress(String bindAddress) { this.bindAddress = bindAddress; }
+    public String getBindAddress() {
+        return bindAddress;
+    }
 
-    public int getBindPort() { return bindPort; }
-    public void setBindPort(int bindPort) { this.bindPort = bindPort; }
+    public void setBindAddress(String bindAddress) {
+        this.bindAddress = bindAddress;
+    }
 
-    public String getPublicAddress() { return publicAddress; }
-    public void setPublicAddress(String publicAddress) { this.publicAddress = publicAddress; }
+    public int getBindPort() {
+        return bindPort;
+    }
 
-    public int getPublicPort() { return publicPort; }
-    public void setPublicPort(int publicPort) { this.publicPort = publicPort; }
+    public void setBindPort(int bindPort) {
+        this.bindPort = bindPort;
+    }
+
+    public String getPublicAddress() {
+        return publicAddress;
+    }
+
+    public void setPublicAddress(String publicAddress) {
+        this.publicAddress = publicAddress;
+    }
+
+    public int getPublicPort() {
+        return publicPort;
+    }
+
+    public void setPublicPort(int publicPort) {
+        this.publicPort = publicPort;
+    }
 
     // ==================== TLS Getters/Setters ====================
 
-    public String getCertificatePath() { return certificatePath; }
-    public void setCertificatePath(String certificatePath) { this.certificatePath = certificatePath; }
+    public String getCertificatePath() {
+        return certificatePath;
+    }
 
-    public String getPrivateKeyPath() { return privateKeyPath; }
-    public void setPrivateKeyPath(String privateKeyPath) { this.privateKeyPath = privateKeyPath; }
+    public void setCertificatePath(String certificatePath) {
+        this.certificatePath = certificatePath;
+    }
+
+    public String getPrivateKeyPath() {
+        return privateKeyPath;
+    }
+
+    public void setPrivateKeyPath(String privateKeyPath) {
+        this.privateKeyPath = privateKeyPath;
+    }
 
     // ==================== Connection Getters/Setters ====================
 
-    public int getMaxConnections() { return maxConnections; }
-    public void setMaxConnections(int maxConnections) { this.maxConnections = maxConnections; }
+    public int getMaxConnections() {
+        return maxConnections;
+    }
 
-    public int getConnectionTimeoutSeconds() { return connectionTimeoutSeconds; }
-    public void setConnectionTimeoutSeconds(int connectionTimeoutSeconds) { this.connectionTimeoutSeconds = connectionTimeoutSeconds; }
+    public void setMaxConnections(int maxConnections) {
+        this.maxConnections = maxConnections;
+    }
+
+    public int getConnectionTimeoutSeconds() {
+        return connectionTimeoutSeconds;
+    }
+
+    public void setConnectionTimeoutSeconds(int connectionTimeoutSeconds) {
+        this.connectionTimeoutSeconds = connectionTimeoutSeconds;
+    }
 
     // ==================== Debug Getters/Setters ====================
 
-    public boolean isDebugMode() { return debugMode; }
-    public void setDebugMode(boolean debugMode) { this.debugMode = debugMode; }
+    public Boolean isDebugMode() {
+        return debugMode;
+    }
 
-    public boolean isPassthroughMode() { return passthroughMode; }
-    public void setPassthroughMode(boolean passthroughMode) { this.passthroughMode = passthroughMode; }
+    public void setDebugMode(Boolean debugMode) {
+        this.debugMode = debugMode;
+    }
+
+    public Boolean isPassthroughMode() {
+        return passthroughMode;
+    }
+
+    public void setPassthroughMode(Boolean passthroughMode) {
+        this.passthroughMode = passthroughMode;
+    }
 
     // ==================== Backend Auth Getters/Setters ====================
 
-    public String getProxySecret() { return proxySecret; }
-    public void setProxySecret(String proxySecret) { this.proxySecret = proxySecret; }
+    public String getProxySecret() {
+        return proxySecret;
+    }
+
+    public void setProxySecret(String proxySecret) {
+        this.proxySecret = proxySecret;
+    }
 
     // ==================== Backend Server Getters/Setters ====================
 
-    public List<BackendServer> getBackends() { return backends; }
-    public void setBackends(List<BackendServer> backends) { this.backends = backends; }
+    public List<BackendServer> getBackends() {
+        return backends;
+    }
+
+    public void setBackends(List<BackendServer> backends) {
+        this.backends = backends;
+    }
 
     public BackendServer getDefaultBackend() {
         return backends.stream()
-            .filter(BackendServer::isDefaultServer)
-            .findFirst()
-            .orElse(backends.isEmpty() ? null : backends.get(0));
+                .filter(BackendServer::isDefaultServer)
+                .findFirst()
+                .orElse(backends.isEmpty() ? null : backends.get(0));
     }
 
     public BackendServer getBackendByName(String name) {
         return backends.stream()
-            .filter(b -> b.getName().equalsIgnoreCase(name))
-            .findFirst()
-            .orElse(null);
+                .filter(b -> b.getName().equalsIgnoreCase(name))
+                .findFirst()
+                .orElse(null);
     }
 
     // ==================== Cluster Getters/Setters ====================
 
-    public boolean isClusterEnabled() { return clusterEnabled; }
-    public void setClusterEnabled(boolean clusterEnabled) { this.clusterEnabled = clusterEnabled; }
+    public Boolean isClusterEnabled() {
+        return clusterEnabled;
+    }
 
-    public String getProxyId() { return proxyId; }
-    public void setProxyId(String proxyId) { this.proxyId = proxyId; }
+    public void setClusterEnabled(Boolean clusterEnabled) {
+        this.clusterEnabled = clusterEnabled;
+    }
 
-    public String getProxyRegion() { return proxyRegion; }
-    public void setProxyRegion(String proxyRegion) { this.proxyRegion = proxyRegion; }
+    public String getProxyId() {
+        return proxyId;
+    }
+
+    public void setProxyId(String proxyId) {
+        this.proxyId = proxyId;
+    }
+
+    public String getProxyRegion() {
+        return proxyRegion;
+    }
+
+    public void setProxyRegion(String proxyRegion) {
+        this.proxyRegion = proxyRegion;
+    }
 
     // ==================== Redis Getters/Setters ====================
 
-    public String getRedisHost() { return redisHost; }
-    public void setRedisHost(String redisHost) { this.redisHost = redisHost; }
+    public String getRedisHost() {
+        return redisHost;
+    }
 
-    public int getRedisPort() { return redisPort; }
-    public void setRedisPort(int redisPort) { this.redisPort = redisPort; }
+    public void setRedisHost(String redisHost) {
+        this.redisHost = redisHost;
+    }
 
-    public String getRedisPassword() { return redisPassword; }
-    public void setRedisPassword(String redisPassword) { this.redisPassword = redisPassword; }
+    public int getRedisPort() {
+        return redisPort;
+    }
 
-    public boolean isRedisSsl() { return redisSsl; }
-    public void setRedisSsl(boolean redisSsl) { this.redisSsl = redisSsl; }
+    public void setRedisPort(int redisPort) {
+        this.redisPort = redisPort;
+    }
 
-    public int getRedisDatabase() { return redisDatabase; }
-    public void setRedisDatabase(int redisDatabase) { this.redisDatabase = redisDatabase; }
+    public String getRedisPassword() {
+        return redisPassword;
+    }
+
+    public void setRedisPassword(String redisPassword) {
+        this.redisPassword = redisPassword;
+    }
+
+    public Boolean isRedisSsl() {
+        return redisSsl;
+    }
+
+    public void setRedisSsl(Boolean redisSsl) {
+        this.redisSsl = redisSsl;
+    }
+
+    public int getRedisDatabase() {
+        return redisDatabase;
+    }
+
+    public void setRedisDatabase(int redisDatabase) {
+        this.redisDatabase = redisDatabase;
+    }
 }
 
