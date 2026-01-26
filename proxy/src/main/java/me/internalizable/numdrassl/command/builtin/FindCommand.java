@@ -25,7 +25,7 @@ public class FindCommand implements Command {
 
     @Override
     public String getUsage() {
-        return "/find [player-name]";
+        return "/find <player-name>";
     }
 
     @Nonnull
@@ -44,14 +44,16 @@ public class FindCommand implements Command {
 
         if (proxy.getPlayer(playerName).isEmpty()) {
             source.sendMessage(ChatMessageBuilder.create()
-                    .red("That player could not be found."));
+                    .red("[X] ")
+                    .gray("That player could not be found."));
             return CommandResult.success();
         }
 
         Player player = proxy.getPlayer(playerName).get();
         if (player.getCurrentServer().isEmpty()) {
             source.sendMessage(ChatMessageBuilder.create()
-                    .red("Unable to find the player´s server"));
+                    .red("[X] ")
+                    .gray("Unable to find the player's server."));
             return CommandResult.success();
         }
 
