@@ -62,7 +62,7 @@ public class ServerCommand implements Command {
                         .red("[X] ")
                         .gray("Player is not online: ")
                         .red(args[1]));
-                return CommandResult.failure("Player is not online");
+                return CommandResult.success();
             }
 
             // Console OR player can execute this
@@ -75,7 +75,7 @@ public class ServerCommand implements Command {
             source.sendMessage(ChatMessageBuilder.create()
                     .red("[X] ")
                     .gray("Only players can switch servers."));
-            return CommandResult.failure("Only players can switch servers");
+            return CommandResult.success();
         }
 
         return transferToServerInternal(source, playerOpt.get(), proxy, args[0]);
@@ -154,7 +154,7 @@ public class ServerCommand implements Command {
             source.sendMessage(ChatMessageBuilder.create()
                     .red("[X] ")
                     .gray("Only players can switch servers."));
-            return CommandResult.failure("Only players can switch servers");
+            return CommandResult.success();
         }
 
         // Transfer the executing player
@@ -173,7 +173,7 @@ public class ServerCommand implements Command {
                     .gray("  Use ")
                     .yellow("/server")
                     .gray(" to see available servers."));
-            return CommandResult.failure("Unknown server: " + serverName);
+            return CommandResult.success();
         }
 
         RegisteredServer targetServer = serverOpt.get();
@@ -188,7 +188,7 @@ public class ServerCommand implements Command {
                     .gray(" is already connected to ")
                     .yellow(serverName)
                     .gray("."));
-            return CommandResult.failure("Target already connected to " + serverName);
+            return CommandResult.success();
         }
 
         // Inform the sender that the transfer is starting
