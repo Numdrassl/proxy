@@ -844,14 +844,15 @@ Output locations:
 
 ## Console Commands
 
-| Command | Description |
-|---------|-------------|
+| Command      | Description                            |
+|--------------|----------------------------------------|
 | `auth login` | Start OAuth device flow authentication |
-| `auth status` | Show current authentication status |
-| `auth logout` | Clear stored credentials |
-| `sessions` | List all connected sessions |
-| `stop` | Gracefully shut down the proxy |
-| `help` | Show available commands |
+| `auth status` | Show current authentication status     |
+| `auth logout` | Clear stored credentials               |
+| `sessions`   | List all connected sessions            |
+| `server`     | List all registered backend servers    |
+| `stop`       | Gracefully shut down the proxy         |
+| `help`       | Show available commands                |
 
 ---
 

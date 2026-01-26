@@ -37,7 +37,7 @@ public class ServerCommand implements Command {
 
     @Override
     public String getUsage() {
-        return "/server [name]";
+        return "/server <server-name> [target-player]";
     }
 
     @Override
@@ -53,8 +53,32 @@ public class ServerCommand implements Command {
             return listServers(source, proxy);
         }
 
-        // With argument - transfer to server
-        return transferToServer(source, proxy, args[0]);
+        // Has target-player argument - transfer target to server
+        if (args.length > 1) {
+            // Find target player
+            Optional<Player> targetOpt = proxy.getPlayer(args[1]);
+            if (targetOpt.isEmpty()) {
+                source.sendMessage(ChatMessageBuilder.create()
+                        .red("[X] ")
+                        .gray("Player is not online: ")
+                        .red(args[1]));
+                return CommandResult.success();
+            }
+
+            // Console OR player can execute this
+            return transferToServerInternal(source, targetOpt.get(), proxy, args[0]);
+        }
+
+        // Only players can use this version
+        Optional<Player> playerOpt = source.asPlayer();
+        if (playerOpt.isEmpty()) {
+            source.sendMessage(ChatMessageBuilder.create()
+                    .red("[X] ")
+                    .gray("Only players can switch servers."));
+            return CommandResult.success();
+        }
+
+        return transferToServerInternal(source, playerOpt.get(), proxy, args[0]);
     }
 
     private CommandResult listServers(CommandSource source, ProxyServer proxy) {
@@ -91,19 +115,19 @@ public class ServerCommand implements Command {
 
             if (isCurrent) {
                 line.green("  > ")
-                    .green(name)
-                    .darkGray(" (")
-                    .aqua(String.valueOf(playerCount))
-                    .darkGray(playerCount == 1 ? " player" : " players")
-                    .darkGray(") ")
-                    .green("[current]");
+                        .green(name)
+                        .darkGray(" (")
+                        .aqua(String.valueOf(playerCount))
+                        .darkGray(playerCount == 1 ? " player" : " players")
+                        .darkGray(") ")
+                        .green("[current]");
             } else {
                 line.gray("  - ")
-                    .white(name)
-                    .darkGray(" (")
-                    .yellow(String.valueOf(playerCount))
-                    .darkGray(playerCount == 1 ? " player" : " players")
-                    .darkGray(")");
+                        .white(name)
+                        .darkGray(" (")
+                        .yellow(String.valueOf(playerCount))
+                        .darkGray(playerCount == 1 ? " player" : " players")
+                        .darkGray(")");
             }
 
             source.sendMessage(line);
@@ -116,7 +140,7 @@ public class ServerCommand implements Command {
         if (source.asPlayer().isPresent()) {
             source.sendMessage(ChatMessageBuilder.create()
                     .gray("  Tip: Use ")
-                    .yellow("/server <name>")
+                    .yellow("/server <server-name> [target-player]")
                     .gray(" to switch."));
         }
 
@@ -124,54 +148,63 @@ public class ServerCommand implements Command {
     }
 
     private CommandResult transferToServer(CommandSource source, ProxyServer proxy, String serverName) {
-        // Only players can transfer
+        // Only players can use /server <server>
         Optional<Player> playerOpt = source.asPlayer();
         if (playerOpt.isEmpty()) {
             source.sendMessage(ChatMessageBuilder.create()
                     .red("[X] ")
                     .gray("Only players can switch servers."));
-            return CommandResult.failure("Only players can switch servers");
+            return CommandResult.success();
         }
 
-        Player player = playerOpt.get();
+        // Transfer the executing player
+        return transferToServerInternal(source, playerOpt.get(), proxy, serverName);
+    }
 
-        // Check if server exists
+    private CommandResult transferToServerInternal(CommandSource sender, Player targetPlayer, ProxyServer proxy, String serverName) {
+        // Check if the target server exists
         Optional<RegisteredServer> serverOpt = proxy.getServer(serverName);
         if (serverOpt.isEmpty()) {
-            source.sendMessage(ChatMessageBuilder.create()
+            sender.sendMessage(ChatMessageBuilder.create()
                     .red("[X] ")
                     .gray("Unknown server: ")
                     .red(serverName));
-            source.sendMessage(ChatMessageBuilder.create()
+            sender.sendMessage(ChatMessageBuilder.create()
                     .gray("  Use ")
                     .yellow("/server")
                     .gray(" to see available servers."));
-            return CommandResult.failure("Unknown server: " + serverName);
+            return CommandResult.success();
         }
 
         RegisteredServer targetServer = serverOpt.get();
 
-        // Check if already on that server
-        Optional<RegisteredServer> currentServer = player.getCurrentServer();
+        // Check if the target player is already connected to that server
+        Optional<RegisteredServer> currentServer = targetPlayer.getCurrentServer();
         if (currentServer.isPresent() && currentServer.get().getName().equalsIgnoreCase(serverName)) {
-            source.sendMessage(ChatMessageBuilder.create()
+            sender.sendMessage(ChatMessageBuilder.create()
                     .yellow("[!] ")
-                    .gray("You are already connected to ")
+                    .gray("Player ")
+                    .yellow(targetPlayer.getUsername())
+                    .gray(" is already connected to ")
                     .yellow(serverName)
                     .gray("."));
-            return CommandResult.failure("Already connected to " + serverName);
+            return CommandResult.success();
         }
 
-        // Initiate transfer
-        source.sendMessage(ChatMessageBuilder.create()
+        // Inform the sender that the transfer is starting
+        sender.sendMessage(ChatMessageBuilder.create()
                 .gold("[*] ")
-                .gray("Connecting to ")
+                .gray("Connecting ")
+                .yellow(targetPlayer.getUsername())
+                .gray(" to ")
                 .green(targetServer.getName())
                 .gray("..."));
 
-        player.transfer(targetServer).thenAccept(result -> {
+        // Start the server transfer
+        targetPlayer.transfer(targetServer).thenAccept(result -> {
             if (!result.isSuccess()) {
-                player.sendMessage(ChatMessageBuilder.create()
+                // Transfer failed -> notify the sender
+                sender.sendMessage(ChatMessageBuilder.create()
                         .red("[X] ")
                         .gray("Transfer failed: ")
                         .red(result.getMessage()));
