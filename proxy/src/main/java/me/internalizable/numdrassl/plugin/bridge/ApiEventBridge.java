@@ -87,6 +87,20 @@ public final class ApiEventBridge implements PacketListener {
         lifecycleHandler.onPostLogin(session);
     }
 
+    /**
+     * Fires PlayerTransferEvent before a player transfer.
+     *
+     * @param session the player session
+     * @param targetBackend the requested target backend
+     * @return the result containing the final target, or denial reason
+     */
+    @Nonnull
+    public PlayerTransferBridgeResult firePlayerTransferEvent(
+            @Nonnull ProxySession session,
+            @Nonnull BackendServer targetBackend) {
+        return lifecycleHandler.onPlayerTransfer(session, targetBackend);
+    }
+
     // ==================== Accessors ====================
 
     /**

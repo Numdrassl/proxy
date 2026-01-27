@@ -32,7 +32,8 @@ A BungeeCord/Velocity-style proxy server for Hytale, built using Netty QUIC. All
 ### Core Functionality
 - **QUIC Protocol Support** - Native QUIC transport with BBR congestion control for low-latency connections
 - **Multi-Backend Support** - Route players to different backend servers (lobby, minigames, etc.)
-- **Player Transfer** - Seamless server switching via `/server` command
+- **Player Transfer** - Seamless server switching via `/server` command or backend-initiated transfers
+- **Backend-Initiated Transfers** - Backend servers can transfer players using the native Hytale `PlayerRef.referToServer()` API
 - **Packet Interception** - Decode, inspect, modify, or cancel packets in transit
 
 ### Security & Authentication
@@ -42,6 +43,8 @@ A BungeeCord/Velocity-style proxy server for Hytale, built using Netty QUIC. All
 
 ### Plugin System
 - **Event-Driven API** - Create plugins with event listeners and commands
+- **Async Login Support** - Non-blocking async operations during login (database, API calls) via `AsyncLoginEvent`
+- **Transfer Interception** - Intercept, deny, or redirect player transfers via `PlayerTransferEvent`
 - **Permissions System** - Built-in permission management with provider support
 - **Scheduler API** - Run tasks synchronously or asynchronously
 
@@ -308,6 +311,42 @@ java -jar HytaleServer.jar \
   --transport QUIC \
   --accept-early-plugins
 ```
+
+### Backend-Initiated Player Transfers
+
+Backend server plugins can transfer players to other servers through the proxy using the native Hytale API:
+
+```java
+import com.hypixel.hytale.server.core.universe.PlayerRef;
+import java.nio.charset.StandardCharsets;
+
+public class MyServerPlugin {
+
+    private static final byte[] NUMDRASSL_MARKER = "Numdrassl".getBytes(StandardCharsets.UTF_8);
+
+    // Transfer player to lobby
+    public void sendToLobby(PlayerRef player) {
+        player.referToServer("lobby", 25565, NUMDRASSL_MARKER);
+    }
+
+    // Transfer player to a minigame server
+    public void sendToMinigame(PlayerRef player, String gameType) {
+        player.referToServer("minigame-" + gameType, 25565, NUMDRASSL_MARKER);
+    }
+
+    // Transfer player after game ends
+    public void onGameEnd(PlayerRef player) {
+        player.referToServer("lobby", 25565, NUMDRASSL_MARKER);
+    }
+}
+```
+
+**Parameters:**
+- `host` - The server name configured in proxy's `config.yml` (e.g., "lobby", "minigames")
+- `port` - Ignored by the proxy (use any valid port, e.g., 25565)
+- `data` - Must be `"Numdrassl".getBytes()` to identify this as a proxy-managed transfer
+
+The proxy intercepts `ClientReferral` packets with the "Numdrassl" marker and handles the transfer internally, firing `PlayerTransferEvent` for plugin interception.
 
 ---
 
@@ -622,6 +661,75 @@ public class MyListener {
 }
 ```
 
+### Async Login (Database/API Loading)
+
+Use `AsyncLoginEvent` to perform non-blocking I/O operations during login without freezing the proxy:
+
+```java
+import me.internalizable.numdrassl.api.event.Subscribe;
+import me.internalizable.numdrassl.api.event.connection.AsyncLoginEvent;
+
+import java.util.concurrent.CompletableFuture;
+
+public class MyListener {
+
+    @Subscribe
+    public void onAsyncLogin(AsyncLoginEvent event) {
+        // Create async task for database loading
+        CompletableFuture<Void> dbTask = CompletableFuture.runAsync(() -> {
+            User user = database.load(event.getPlayer().getUniqueId());
+
+            if (user.isBanned()) {
+                event.setResult(AsyncLoginEvent.AsyncLoginResult.denied("You are banned!"));
+            }
+        });
+
+        // Register task - proxy waits for completion before proceeding
+        event.registerTask(dbTask);
+    }
+}
+```
+
+### Transfer Interception
+
+Use `PlayerTransferEvent` to intercept, deny, or redirect player transfers:
+
+```java
+import me.internalizable.numdrassl.api.event.Subscribe;
+import me.internalizable.numdrassl.api.event.player.PlayerTransferEvent;
+import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
+
+public class MyListener {
+
+    // Deny with permission check
+    @Subscribe
+    public void onPlayerTransfer(PlayerTransferEvent event) {
+        var target = event.getTargetServer();
+
+        if (target.getName().startsWith("vip-") && !event.getPlayer().hasPermission("server.vip")) {
+            event.setResult(PlayerTransferEvent.PlayerTransferResult.denied(
+                ChatMessageBuilder.create()
+                    .red("[X] ")
+                    .gray("You need ")
+                    .gold("VIP")
+                    .gray(" rank to access this server!")
+            ));
+        }
+    }
+
+    // Redirect to load-balanced server
+    @Subscribe
+    public void onTransferRedirect(PlayerTransferEvent event) {
+        if (event.getTargetServer().getName().equals("lobby")) {
+            String bestLobby = findLeastLoadedLobby();
+            proxy.getServer(bestLobby).ifPresent(server -> {
+                event.setResult(PlayerTransferEvent.PlayerTransferResult.allowed(server));
+            });
+        }
+    }
+}
+```
+
 ### Commands
 
 ```java
@@ -676,11 +784,13 @@ Events use the `@Subscribe` annotation from `me.internalizable.numdrassl.api.eve
 |-------|-------------|
 | `ProxyInitializeEvent` | Proxy has started |
 | `ProxyShutdownEvent` | Proxy is shutting down |
+| `AsyncLoginEvent` | Async login phase for non-blocking I/O (database, API calls) |
 | `LoginEvent` | Player is connecting (cancellable) |
 | `PostLoginEvent` | Player has fully connected |
 | `DisconnectEvent` | Player has disconnected |
 | `PlayerChatEvent` | Player sent a chat message (cancellable) |
 | `PlayerCommandEvent` | Player executed a command (cancellable) |
+| `PlayerTransferEvent` | Player is being transferred to another server (cancellable, redirectable) |
 | `ServerConnectEvent` | Player connecting to backend (cancellable) |
 | `ServerConnectedEvent` | Player connected to backend |
 | `ServerDisconnectEvent` | Player disconnected from backend |

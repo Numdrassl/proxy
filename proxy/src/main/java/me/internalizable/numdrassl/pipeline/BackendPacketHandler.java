@@ -1,11 +1,15 @@
 package me.internalizable.numdrassl.pipeline;
 
 import com.hypixel.hytale.protocol.Packet;
+import com.hypixel.hytale.protocol.packets.auth.ClientReferral;
 import com.hypixel.hytale.protocol.packets.auth.ConnectAccept;
 import com.hypixel.hytale.protocol.packets.connection.Disconnect;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
+import me.internalizable.numdrassl.api.player.TransferResult;
+import me.internalizable.numdrassl.config.BackendServer;
 import me.internalizable.numdrassl.profiling.ProxyMetrics;
 import me.internalizable.numdrassl.server.ProxyCore;
 import me.internalizable.numdrassl.session.ProxySession;
@@ -14,7 +18,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Handles packets from the upstream backend server.
@@ -26,6 +32,13 @@ import java.util.Objects;
 public final class BackendPacketHandler extends SimpleChannelInboundHandler<Object> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BackendPacketHandler.class);
+
+    /**
+     * Magic marker identifying backend-initiated transfers via ClientReferral.
+     * When a backend sends this marker in the referral data, the proxy intercepts
+     * and handles the transfer instead of forwarding to the client.
+     */
+    private static final String BACKEND_TRANSFER_MARKER = "Numdrassl";
 
     private final ProxyCore proxyCore;
     private final ProxySession session;
@@ -68,6 +81,8 @@ public final class BackendPacketHandler extends SimpleChannelInboundHandler<Obje
             handleConnectAccept(accept);
         } else if (packet instanceof Disconnect disconnect) {
             handleDisconnect(disconnect);
+        } else if (packet instanceof ClientReferral referral) {
+            handleClientReferral(referral);
         } else {
             forwardToClient(packet);
         }
@@ -119,6 +134,42 @@ public final class BackendPacketHandler extends SimpleChannelInboundHandler<Obje
 
         forwardToClient(disconnect);
         session.disconnect("Backend disconnected: " + disconnect.reason);
+    }
+
+    private void handleClientReferral(ClientReferral referral) {
+        if (isBackendInitiatedTransfer(referral.data)) {
+            handleBackendInitiatedTransfer(referral);
+            return;
+        }
+
+        // External referral - forward to client (original behavior)
+        LOGGER.debug("Session {}: Forwarding external ClientReferral to client", session.getSessionId());
+        forwardToClient(referral);
+    }
+
+    private boolean isBackendInitiatedTransfer(byte[] data) {
+        if (data == null || data.length == 0) {
+            return false;
+        }
+        String marker = new String(data, StandardCharsets.UTF_8);
+        return BACKEND_TRANSFER_MARKER.equalsIgnoreCase(marker);
+    }
+
+    private void handleBackendInitiatedTransfer(ClientReferral referral) {
+        // Validate referral has destination
+        if (referral.hostTo == null) {
+            LOGGER.warn("Session {}: Invalid ClientReferral missing destination",
+                    session.getSessionId());
+            return;
+        }
+
+        String targetServerName = referral.hostTo.host;
+
+        LOGGER.info("Session {}: Backend {} requested transfer to {}",
+                session.getSessionId(), Objects.requireNonNull(session.getCurrentBackend()).getName(), targetServerName);
+
+        // Delegate to PlayerTransfer - handles event firing, health check, validation, and execution
+        proxyCore.getPlayerTransfer().transfer(session, targetServerName);
     }
 
     private boolean isTransferring() {
