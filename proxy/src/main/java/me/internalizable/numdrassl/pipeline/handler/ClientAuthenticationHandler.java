@@ -260,13 +260,6 @@ public final class ClientAuthenticationHandler {
                     session.disconnect(disconnectMessage);
                     return null;
                 });
-
-        if (!session.isActive()) {
-            LOGGER.debug("Session {}: Login denied or disconnected during event handling. Aborting backend connection.", session.getSessionId());
-            return;
-        }
-
-        onAuthenticationComplete.run();
     }
 
     /**
