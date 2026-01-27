@@ -13,6 +13,7 @@ import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
 import me.internalizable.numdrassl.api.player.Player;
 import me.internalizable.numdrassl.auth.CertificateExtractor;
 import me.internalizable.numdrassl.config.BackendServer;
+import me.internalizable.numdrassl.pipeline.proxy.ProxyProtocolHandler;
 import me.internalizable.numdrassl.server.ProxyCore;
 import me.internalizable.numdrassl.server.network.ChatMessageConverter;
 import me.internalizable.numdrassl.session.auth.SessionAuthState;
@@ -96,11 +97,41 @@ public final class ProxySession {
     }
 
     private InetSocketAddress extractAddress(QuicChannel channel) {
-        SocketAddress addr = channel.remoteAddress();
+        // First try to get the address from PROXY protocol (if available)
+        InetSocketAddress proxyAddress = channel.attr(ProxyProtocolHandler.REAL_CLIENT_ADDRESS).get();
+        if (proxyAddress != null) {
+            LOGGER.debug("Session {}: Using PROXY protocol address: {}", id, proxyAddress);
+            return proxyAddress;
+        }
+
+        // Fall back to the direct connection address
+        SocketAddress addr = channel.remoteSocketAddress();
         if (addr instanceof InetSocketAddress inet) {
             return inet;
         }
         return new InetSocketAddress("0.0.0.0", 0);
+    }
+
+    /**
+     * Gets the effective client address, checking for PROXY protocol updates.
+     *
+     * <p>This method should be called after the PROXY protocol handler has processed
+     * the header, as the real client address may have been updated.</p>
+     *
+     * @return the effective client address (from PROXY protocol or direct connection)
+     */
+    @Nonnull
+    public InetSocketAddress getEffectiveClientAddress() {
+        QuicChannel channel = channels.clientChannel();
+
+        // Check if PROXY protocol has set a real client address
+        InetSocketAddress proxyAddress = channel.attr(ProxyProtocolHandler.REAL_CLIENT_ADDRESS).get();
+        if (proxyAddress != null) {
+            return proxyAddress;
+        }
+
+        // Fall back to the stored client address (from initial connection)
+        return clientAddress;
     }
 
     private void extractCertificate(QuicChannel channel) {

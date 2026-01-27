@@ -14,10 +14,14 @@ java {
 
 repositories {
     mavenCentral()
+    maven {
+        name = "hytale-release"
+        url = uri("https://maven.hytale.com/release")
+    }
 }
 
 dependencies {
-    compileOnly(files("libs/HytaleServer.jar"))
+    compileOnly("com.hypixel.hytale:Server:2026.01.24-6e2d4fc36")
 
     // Common module with SecretMessageUtil - will be bundled into JAR
     implementation(project(":common"))

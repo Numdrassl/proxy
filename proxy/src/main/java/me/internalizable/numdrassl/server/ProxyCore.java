@@ -19,10 +19,12 @@ import me.internalizable.numdrassl.api.event.proxy.ProxyInitializeEvent;
 import me.internalizable.numdrassl.api.event.proxy.ProxyShutdownEvent;
 import me.internalizable.numdrassl.auth.ProxyAuthenticator;
 import me.internalizable.numdrassl.config.ProxyConfig;
+import me.internalizable.numdrassl.config.ProxyProtocolConfig;
 import me.internalizable.numdrassl.event.packet.PacketEventManager;
 import me.internalizable.numdrassl.pipeline.ClientPacketHandler;
 import me.internalizable.numdrassl.pipeline.codec.ProxyPacketDecoder;
 import me.internalizable.numdrassl.pipeline.codec.ProxyPacketEncoder;
+import me.internalizable.numdrassl.pipeline.proxy.ProxyProtocolHandler;
 import me.internalizable.numdrassl.plugin.NumdrasslProxy;
 import me.internalizable.numdrassl.profiling.MetricsHistory;
 import me.internalizable.numdrassl.profiling.MetricsHttpServer;
@@ -161,6 +163,18 @@ public final class ProxyCore {
         LOGGER.info("Bind: {}:{}", config.getBindAddress(), config.getBindPort());
         LOGGER.info("Debug mode: {}", config.isDebugMode());
         LOGGER.info("Backend auth: Secret-based (HMAC referral)");
+
+        ProxyProtocolConfig proxyProtocol = config.getProxyProtocol();
+        if (proxyProtocol != null && proxyProtocol.isEnabled()) {
+            LOGGER.info("PROXY protocol: ENABLED (required={}, trusted proxies={})",
+                proxyProtocol.isRequired(),
+                proxyProtocol.getTrustedProxies().isEmpty() ? "ALL" : proxyProtocol.getTrustedProxies().size());
+            if (proxyProtocol.getTrustedProxies().isEmpty()) {
+                LOGGER.warn("PROXY protocol is enabled without trusted proxies - ALL sources trusted!");
+            }
+        } else {
+            LOGGER.info("PROXY protocol: disabled");
+        }
     }
 
     // ==================== Metrics ====================
@@ -308,6 +322,20 @@ public final class ProxyCore {
             return;
         }
         session.setClientStream(ch);
+
+        // Add PROXY protocol handler if enabled (must be first in pipeline)
+        ProxyProtocolConfig proxyProtocolConfig = config.getProxyProtocol();
+        if (proxyProtocolConfig != null && proxyProtocolConfig.isEnabled()) {
+            ch.pipeline().addLast("proxy-protocol",
+                new ProxyProtocolHandler(
+                    proxyProtocolConfig.getTrustedProxies(),
+                    proxyProtocolConfig.isRequired(),
+                    debugMode
+                )
+            );
+            LOGGER.debug("PROXY protocol handler added to pipeline for session {}", session.getSessionId());
+        }
+
         ch.pipeline().addLast(new ProxyPacketDecoder("client", debugMode));
         ch.pipeline().addLast(new ProxyPacketEncoder("client", debugMode));
         ch.pipeline().addLast(new ClientPacketHandler(this, session));

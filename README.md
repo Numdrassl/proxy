@@ -114,6 +114,7 @@ Cross-Proxy Communication:
 - **Cross-Proxy Messaging**: Real-time communication between proxy instances
 - **Global Player Management**: Track players across all proxies in the cluster
 - **Permissions System**: Built-in permission management with provider support
+- **HAProxy PROXY Protocol**: Support for DDoS protection services to preserve client IPs
 
 ---
 
@@ -324,6 +325,22 @@ redisPassword: null
 redisSsl: false
 # Redis database index (0-15)
 redisDatabase: 0
+
+# ==================== Proxy Protocol (HAProxy) ====================
+
+# Enable HAProxy PROXY protocol support for DDoS protection services.
+# This allows preserving client IPs through DDoS mitigation proxies.
+# WARNING: Only enable if using a DDoS protection service!
+proxyProtocol:
+  # Enable PROXY protocol support
+  enabled: false
+  # Whether PROXY protocol header is required (reject if missing)
+  required: true
+  # Timeout for receiving PROXY protocol header (seconds)
+  headerTimeoutSeconds: 5
+  # Trusted proxy IPs (empty = trust all, NOT recommended!)
+  trustedProxies:
+    - "192.168.1.1"  # Your DDoS protection service IPs
 ```
 
 ### Backend Configuration
@@ -377,6 +394,22 @@ The Proxy supports the following environment variables:
 **Important Annotations:**
 - `@Subscribe` (from `api.event`) - For local proxy events (player joins, commands, etc.)
 - `@MessageSubscribe` (from `api.messaging.annotation`) - For cross-proxy messages
+
+### PROXY Protocol (DDoS Protection)
+
+When deploying behind a DDoS protection service (OVH, TCPShield, Cloudflare Spectrum), enable PROXY protocol to preserve real client IPs:
+
+```yaml
+proxyProtocol:
+  enabled: true
+  required: true
+  trustedProxies:
+    - "10.0.0.1"  # Your DDoS protection service IP
+```
+
+> ⚠️ **Security Warning**: Never enable PROXY protocol without specifying `trustedProxies`! This would allow attackers to spoof their IP addresses.
+
+For detailed configuration and testing instructions, see [docs/PROXY_PROTOCOL.md](docs/PROXY_PROTOCOL.md).
 
 ---
 
