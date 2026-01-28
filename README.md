@@ -1,35 +1,313 @@
 # Numdrassl - Hytale QUIC Proxy Server
 
-[![Join Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/54VFfuyUE8)
-[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Numdrassl/proxy?utm_source=oss&utm_medium=github&utm_campaign=Numdrassl%2Fproxy&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)
+[![Discord](https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white)](https://discord.gg/54VFfuyUE8)
 [![Build Status](https://github.com/Numdrassl/proxy/actions/workflows/build.yml/badge.svg)](https://github.com/Numdrassl/proxy/actions/workflows/build.yml)
 [![Release](https://github.com/Numdrassl/proxy/actions/workflows/release.yml/badge.svg)](https://github.com/Numdrassl/proxy/actions/workflows/release.yml)
-![Java](https://img.shields.io/badge/Java-25-orange)
+![Java](https://img.shields.io/badge/Java-21+-orange)
 ![License](https://img.shields.io/badge/License-Proprietary-red)
 
-## Community
-
- [![Discord](https://cdn.simpleicons.org/discord/5865F2) Join the Discord](https://discord.gg/54VFfuyUE8)
- 
 A BungeeCord/Velocity-style proxy server for Hytale, built using Netty QUIC. Allows you to connect multiple backend servers, intercept packets, create plugins, and manage players across your network.
 
 ## Table of Contents
 
-- [Architecture](#architecture)
 - [Features](#features)
-- [Project Structure](#project-structure)
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
 - [Backend Server Setup (Bridge)](#backend-server-setup-bridge)
+- [Architecture](#architecture)
 - [Plugin Development](#plugin-development)
 - [API Reference](#api-reference)
 - [Supported Packets](#supported-packets)
-- [Building](#building)
+- [Building from Source](#building-from-source)
 - [Console Commands](#console-commands)
 - [Troubleshooting](#troubleshooting)
 - [CI/CD](#cicd)
 - [References](#references)
+
+---
+
+## Features
+
+### Core Functionality
+- **QUIC Protocol Support** - Native QUIC transport with BBR congestion control for low-latency connections
+- **Multi-Backend Support** - Route players to different backend servers (lobby, minigames, etc.)
+- **Player Transfer** - Seamless server switching via `/server` command
+- **Packet Interception** - Decode, inspect, modify, or cancel packets in transit
+
+### Security & Authentication
+- **Secret-Based Auth** - Secure proxy-to-backend authentication using HMAC-signed referrals
+- **OAuth Device Flow** - Authenticate proxy with your Hytale account
+- **HAProxy PROXY Protocol** - Support for DDoS protection services to preserve client IPs
+
+### Plugin System
+- **Event-Driven API** - Create plugins with event listeners and commands
+- **Permissions System** - Built-in permission management with provider support
+- **Scheduler API** - Run tasks synchronously or asynchronously
+
+### Cluster Mode (Multi-Proxy)
+- **Redis-Backed Pub/Sub** - Multi-proxy deployments with real-time synchronization
+- **Cross-Proxy Messaging** - Send messages to players on any proxy in the cluster
+- **Global Player Management** - Track players across all proxies
+- **Load Balancing** - Route players to the least loaded proxy
+
+### Monitoring & Profiling
+- **Built-in Metrics** - HTTP endpoints for Prometheus, real-time dashboards
+- **Performance Tracking** - Packet throughput, response times, memory usage
+- **Historical Data** - Peak values, period averages, trend analysis
+
+---
+
+## Requirements
+
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| **Java** | 21+ | Tested with Java 21 and 25 |
+| **Hytale Server** | Latest | Backend servers for players to connect to |
+| **Operating System** | Linux/Windows/macOS | Linux recommended for production |
+
+### Optional Requirements
+
+| Requirement | When Needed |
+|-------------|-------------|
+| **Redis** | Cluster mode (multi-proxy deployments) |
+| **TLS Certificates** | Auto-generated on first run, or provide your own |
+
+---
+
+## Quick Start
+
+### 1. Download the Latest Release
+
+Download the following files from the [Releases page](https://github.com/Numdrassl/proxy/releases):
+
+| File | Purpose |
+|------|---------|
+| `proxy-*.jar` | The main proxy server |
+| `bridge-*.jar` | Backend server plugin (goes in `mods/` folder) |
+| `bridge-packets-*.jar` | Packet definitions (goes in `earlyplugins/` folder) |
+
+### 2. Set Up the Proxy Server
+
+```bash
+# Create a directory for the proxy
+mkdir numdrassl-proxy
+cd numdrassl-proxy
+
+# Run the proxy (first run generates config)
+java -jar proxy-*.jar
+```
+
+### 3. Authenticate with Hytale
+
+On first run, use the `auth login` command in the console:
+
+```
+> auth login
+===========================================
+  To authenticate, visit:
+  https://accounts.hytale.com/device
+  
+  Enter code: XXXX-XXXX
+===========================================
+```
+
+### 4. Set Up Your Backend Server(s)
+
+See [Backend Server Setup](#backend-server-setup-bridge) for detailed instructions.
+
+### 5. Configure and Connect
+
+1. Edit `config/proxy.yml` to set your backend servers
+2. Ensure the `proxySecret` matches your Bridge plugin config
+3. Start the proxy and backend servers
+4. Connect your Hytale client to `your-server-ip:24322`
+
+---
+
+## Configuration
+
+### Proxy Configuration (`config/proxy.yml`)
+
+```yaml
+# Numdrassl Proxy Configuration
+
+# ==================== Network Configuration ====================
+
+# Address to bind the proxy server to
+bindAddress: "0.0.0.0"
+# Port to listen on (default: 24322)
+bindPort: 24322
+
+# Public address for player transfers (sent in ClientReferral packets)
+# Set this to your server's public domain/IP if behind NAT
+publicAddress: "play.myserver.com"
+publicPort: 24322
+
+# ==================== TLS Configuration ====================
+
+# TLS certificates (auto-generated if missing)
+certificatePath: "certs/server.crt"
+privateKeyPath: "certs/server.key"
+
+# ==================== Connection Limits ====================
+
+# Maximum concurrent connections
+maxConnections: 1000
+# Connection timeout in seconds
+connectionTimeoutSeconds: 30
+
+# ==================== Debug Options ====================
+
+# Enable verbose logging for debugging
+debugMode: false
+# Passthrough mode (forward packets without inspection)
+passthroughMode: false
+
+# ==================== Backend Authentication ====================
+
+# Shared secret for backend authentication (HMAC signing)
+# Must match the secret in your Bridge plugin config
+# Auto-generated on first run if not set
+proxySecret: "your-shared-secret-here"
+
+# ==================== Backend Servers ====================
+
+# List of backend servers players can connect to
+backends:
+  - name: "lobby"
+    host: "127.0.0.1"
+    port: 5520
+    defaultServer: true
+  - name: "survival"
+    host: "192.168.1.100"
+    port: 5520
+    defaultServer: false
+  - name: "minigames"
+    host: "192.168.1.101"
+    port: 5520
+    defaultServer: false
+
+# ==================== Metrics Configuration ====================
+
+# Enable metrics collection and HTTP endpoint
+metricsEnabled: true
+# Port for metrics HTTP server (Prometheus scrape endpoint)
+metricsPort: 9090
+# Interval for logging metrics summary (0 to disable)
+metricsLogIntervalSeconds: 60
+
+# ==================== Cluster Configuration ====================
+
+# Enable cluster mode for multi-proxy deployments
+clusterEnabled: false
+# Unique identifier for this proxy instance (auto-generated if null)
+proxyId: null
+# Region identifier for load balancing (e.g., "eu-west", "us-east")
+proxyRegion: "default"
+
+# ==================== Redis Configuration ====================
+
+# Redis connection settings (only used when clusterEnabled: true)
+redisHost: "localhost"
+redisPort: 6379
+redisPassword: null
+redisSsl: false
+redisDatabase: 0
+
+# ==================== Proxy Protocol (HAProxy) ====================
+
+# Enable HAProxy PROXY protocol support for DDoS protection services
+proxyProtocol:
+  enabled: false
+  required: true
+  headerTimeoutSeconds: 5
+  trustedProxies: []
+```
+
+### Environment Variables
+
+The proxy supports the following environment variables which override config values:
+
+| Variable | Description |
+|----------|-------------|
+| `NUMDRASSL_SECRET` | Overrides `proxySecret` from config |
+
+---
+
+## Backend Server Setup (Bridge)
+
+The Bridge plugin authenticates proxy connections using HMAC-signed referral data. This allows the backend to run in `--auth-mode insecure` while validating that connections come from your trusted proxy.
+
+### Required Files
+
+Download from the [Releases page](https://github.com/Numdrassl/proxy/releases):
+
+| File | Destination | Purpose |
+|------|-------------|---------|
+| `bridge-*.jar` | `mods/` | Main Bridge plugin |
+| `bridge-packets-*.jar` | `earlyplugins/` | Packet definitions (required) |
+
+### 1. Install the Bridge Components
+
+```bash
+# Copy Bridge plugin to mods folder
+cp bridge-*.jar /path/to/hytale-server/mods/
+
+# Copy Bridge packets to earlyplugins folder
+cp bridge-packets-*.jar /path/to/hytale-server/earlyplugins/
+```
+
+### 2. Start Backend with Required Flags
+
+```bash
+java -jar HytaleServer.jar --auth-mode insecure --transport QUIC --accept-early-plugins
+```
+
+> ⚠️ **Important**: The `--accept-early-plugins` flag is required for the bridge-packets module to load correctly.
+
+### 3. Configure the Bridge
+
+On first run, the Bridge creates `plugins/Bridge/config.json`:
+
+```json
+{
+  "SecretKey": "your-shared-secret-here",
+  "ServerName": "lobby"
+}
+```
+
+> ⚠️ **Critical**: The `SecretKey` must match the `proxySecret` in your proxy's `config/proxy.yml`!
+
+### 4. Security: Firewall Your Backend
+
+Block direct connections to your backend server. Only allow connections from your proxy:
+
+```bash
+# UFW (Ubuntu/Debian)
+sudo ufw allow from <proxy-ip> to any port 5520 proto udp
+sudo ufw deny 5520/udp
+
+# iptables
+iptables -A INPUT -p udp --dport 5520 -s <proxy-ip> -j ACCEPT
+iptables -A INPUT -p udp --dport 5520 -j DROP
+```
+
+### Bridge Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `NUMDRASSL_SERVERNAME` | Overrides `ServerName` from config |
+| `NUMDRASSL_SECRET` | Overrides `SecretKey` from config |
+
+### Complete Backend Startup Command
+
+```bash
+java -jar HytaleServer.jar \
+  --auth-mode insecure \
+  --transport QUIC \
+  --accept-early-plugins
+```
 
 ---
 
@@ -101,21 +379,6 @@ Cross-Proxy Communication:
 
 ---
 
-## Features
-
-- **QUIC Protocol Support**: Native QUIC transport with BBR congestion control
-- **Packet Interception**: Decode, inspect, modify, or cancel packets
-- **Multi-Backend Support**: Route players to different backend servers
-- **Player Transfer**: Seamless server switching via `/server` command
-- **Plugin System**: Create plugins with event listeners and commands
-- **Secret-Based Auth**: Secure proxy-to-backend authentication (no JWT forwarding needed)
-- **OAuth Device Flow**: Authenticate proxy with Hytale account
-- **Cluster Mode**: Multi-proxy deployments with Redis-backed pub/sub
-- **Cross-Proxy Messaging**: Real-time communication between proxy instances
-- **Global Player Management**: Track players across all proxies in the cluster
-- **Permissions System**: Built-in permission management with provider support
-
----
 
 ## Project Structure
 
@@ -187,15 +450,7 @@ Numdrassl/
 
 ---
 
-## Requirements
-
-- **Java 21+** (tested with Java 25)
-- **Hytale backend server(s)** running in insecure/development mode
-- **TLS certificates** (auto-generated on first run)
-
----
-
-## Quick Start
+## Building from Source
 
 ### 1. Build the Project
 
@@ -210,229 +465,19 @@ Numdrassl/
 ./gradlew :proxy:run
 
 # Or using the JAR directly
-java -jar proxy/build/libs/proxy-1.0-SNAPSHOT.jar
+java -jar proxy/build/libs/proxy-*.jar
 ```
 
-### 3. Authenticate with Hytale
+### Build Artifacts
 
-On first run, use the `auth login` command in the console:
+After building, the following JARs are created:
 
-```
-> auth login
-===========================================
-  To authenticate, visit:
-  https://accounts.hytale.com/device
-  
-  Enter code: XXXX-XXXX
-===========================================
-```
-
-### 4. Configure Your Backend
-
-See [Backend Server Setup](#backend-server-setup-bridge) below.
-
-### 5. Connect
-
-Point your Hytale client to `localhost:45585` (or your configured address).
-
----
-
-## Configuration
-
-### Proxy Configuration (`config/proxy.yml`)
-
-```yaml
-# Numdrassl Proxy Configuration
-# https://github.com/Numdrassl/proxy
-
-# ==================== Network Configuration ====================
-
-# Address to bind the proxy server to
-bindAddress: "0.0.0.0"
-# Port to listen on
-bindPort: 45585
-
-# Public address for player transfers (sent in ClientReferral packets)
-# Set this to your server's public domain/IP if behind NAT
-publicAddress: "play.myserver.com"
-publicPort: 45585
-
-# ==================== TLS Configuration ====================
-
-# TLS certificates (auto-generated if missing)
-certificatePath: "certs/server.crt"
-privateKeyPath: "certs/server.key"
-
-# ==================== Connection Limits ====================
-
-# Maximum concurrent connections
-maxConnections: 1000
-# Connection timeout in seconds
-connectionTimeoutSeconds: 30
-
-# ==================== Debug Options ====================
-
-# Enable verbose logging for debugging
-debugMode: false
-# Passthrough mode (forward packets without inspection)
-passthroughMode: false
-
-# ==================== Backend Authentication ====================
-
-# Shared secret for backend authentication (HMAC signing)
-# Must match the secret in your Bridge plugin config
-# If null, a random secret is generated on first run
-proxySecret: "your-shared-secret-here"
-
-# ==================== Backend Servers ====================
-
-# List of backend servers players can connect to
-backends:
-  - name: "lobby"
-    host: "127.0.0.1"
-    port: 5520
-    defaultServer: true
-  - name: "game1"
-    host: "192.168.1.100"
-    port: 5520
-    defaultServer: false
-
-# ==================== Cluster Configuration ====================
-
-# Enable cluster mode for multi-proxy deployments
-# Requires Redis for cross-proxy communication
-clusterEnabled: false
-
-# Unique identifier for this proxy instance (auto-generated if null)
-proxyId: null
-# Region identifier for load balancing (e.g., "eu-west", "us-east")
-proxyRegion: "default"
-
-# ==================== Redis Configuration ====================
-
-# Redis connection settings (only used when clusterEnabled: true)
-# SECURITY WARNING: When using Redis in production:
-# 1. Always set a strong redisPassword
-# 2. Enable redisSsl for encrypted connections
-# 3. Use VPC/firewall rules to restrict Redis access
-# 4. Never expose Redis to the public internet
-redisHost: "localhost"
-redisPort: 6379
-# Redis password - ALWAYS SET THIS IN PRODUCTION
-redisPassword: null
-# Enable SSL/TLS for Redis connection - RECOMMENDED for production
-redisSsl: false
-# Redis database index (0-15)
-redisDatabase: 0
-```
-
-### Backend Configuration
-
-Each backend server requires the Bridge plugin with matching `proxySecret`.
-
-### Proxy: Supported Environment Variables
-
-The Proxy supports the following environment variables:
-
-| Environment Variable   | Description                                       |
-|------------------------|---------------------------------------------------|
-| `NUMDRASSL_SECRET`     | Overrides the secret from the proxy config. |
-
-
-### Cluster Configuration Notes
-
-> ⚠️ **Important Security Warnings:**
-> 
-> - **Public Address**: When running multiple proxies, `publicAddress` must be set to a routable IP/hostname that other proxies and clients can reach. Using `0.0.0.0` as `publicAddress` will not work for inter-proxy communication. Set it to your server's actual public IP or DNS name.
-> 
-> - **Redis Security**: 
->   - Always set `redisPassword` in production environments
->   - Enable `redisSsl: true` for encrypted connections
->   - Use VPC/security groups to restrict Redis access
->   - Never expose Redis directly to the public internet
-> 
-> - **Proxy Identity**: Set unique `proxyId` values for each proxy (e.g., "proxy-eu-1", "proxy-us-1") to avoid conflicts. If left null, a UUID is auto-generated.
-
-**Cluster Features:**
-- **Global Player Count**: `proxy.getGlobalPlayerCount()` returns players across all proxies
-- **Cross-Proxy Chat**: Send messages to players on other proxies
-- **Proxy Discovery**: Track which proxies are online via heartbeats
-- **Load Balancing**: `clusterManager.getLeastLoadedProxy("eu-west")` for routing
-- **Cross-Proxy Messaging**: Pub/sub messaging via Redis
-
-**System Channels (Built-in):**
-| Channel | Purpose |
-|---------|---------|
-| `HEARTBEAT` | Proxy liveness monitoring |
-| `CHAT` | Cross-proxy chat messages |
-| `BROADCAST` | Server-wide announcements |
-| `PLAYER_COUNT` | Player count synchronization |
-| `TRANSFER` | Cross-proxy player transfers |
-| `PLUGIN` | Plugin-specific messages |
-
-**Cluster Events:**
-- `ProxyJoinClusterEvent` - A new proxy joined the cluster
-- `ProxyLeaveClusterEvent` - A proxy left (graceful or timeout)
-
-**Important Annotations:**
-- `@Subscribe` (from `api.event`) - For local proxy events (player joins, commands, etc.)
-- `@MessageSubscribe` (from `api.messaging.annotation`) - For cross-proxy messages
-
----
-
-## Backend Server Setup (Bridge)
-
-The Bridge plugin authenticates proxy connections using HMAC-signed referral data instead of JWT tokens. This allows the backend to run in `--auth-mode insecure` while still validating that connections come from your proxy.
-
-### 1. Build the Bridge Plugin
-
-```bash
-./gradlew :bridge:build
-```
-
-The plugin JAR is at: `bridge/build/libs/bridge-1.0-SNAPSHOT.jar`
-
-### 2. Install on Backend Server
-
-Copy `bridge-1.0-SNAPSHOT.jar` to your Hytale server's `mods/` directory.
-
-### 3. Start Backend in Insecure Mode
-
-```bash
-java -jar HytaleServer.jar --auth-mode insecure --transport QUIC
-```
-
-### 4. Configure the Bridge
-
-On first run, the Bridge creates `plugins/Bridge/config.json`:
-
-```json
-{
-  "SecretKey": "your-shared-secret-here",
-  "ServerName": "lobby"
-}
-```
-
-**Important**: The `SecretKey` must match the `proxySecret` in your proxy config!
-
-### 5. Security: Firewall Your Backend
-
-Block direct connections to your backend server from the internet. Only allow connections from your proxy server's IP:
-
-```bash
-# Example: Allow only proxy IP (192.168.1.50) on port 5520
-iptables -A INPUT -p udp --dport 5520 -s 192.168.1.50 -j ACCEPT
-iptables -A INPUT -p udp --dport 5520 -j DROP
-```
-
-### Bridge: Supported Environment Variables
-
-The Bridge plugin supports the following environment variables:
-
-| Environment Variable   | Description |
-|------------------------|-------------|
-| `NUMDRASSL_SERVERNAME` | Overrides the serverName from the Bridge config. |
-| `NUMDRASSL_SECRET`     | Overrides the shared secret from the Bridge config. |
+| File | Location |
+|------|----------|
+| Proxy JAR | `proxy/build/libs/proxy-*.jar` |
+| Bridge Plugin | `bridge/build/libs/bridge-*.jar` |
+| Bridge Packets | `bridge-packets/build/libs/bridge-packets-*.jar` |
+| API JAR | `api/build/libs/api-*.jar` |
 
 ---
 
@@ -500,12 +545,13 @@ java {
 > **Note:** For snapshot versions (development), add the Sonatype snapshots repository:
 > ```kotlin
 > repositories {
->     mavenCentral()
 >     maven("https://s01.oss.sonatype.org/content/repositories/snapshots/")
 > }
 > ```
 
-### Basic Plugin
+### Plugin Structure
+
+A basic plugin looks like this:
 
 ```java
 package com.example.myplugin;
@@ -653,6 +699,99 @@ Cross-proxy messages use the `@MessageSubscribe` annotation from `me.internaliza
 | `PLAYER_COUNT` | `PlayerCountMessage` | Player count updates |
 | `TRANSFER` | `TransferMessage` | Cross-proxy transfers |
 | `PLUGIN` | `PluginMessage` | Custom plugin messages |
+
+### Custom Packets (Proxy ↔ Backend Communication)
+
+You can create custom packets for communication between the proxy and backend servers. This is useful for features like health checks, synchronization, or custom game logic.
+
+#### Packet Structure
+
+Custom packets must implement the Hytale `Packet` interface:
+
+```java
+package me.internalizable.numdrassl.packet;
+
+import com.hypixel.hytale.protocol.Packet;
+import com.hypixel.hytale.protocol.io.ValidationResult;
+import io.netty.buffer.ByteBuf;
+
+import javax.annotation.Nonnull;
+
+public class ProxyPing implements Packet {
+
+    public static final int PACKET_ID = 998;  // Choose a unique ID (avoid Hytale's reserved IDs)
+    
+    public long nonce;
+    public long timestamp;
+
+    public ProxyPing() {}
+
+    public ProxyPing(long nonce, long timestamp) {
+        this.nonce = nonce;
+        this.timestamp = timestamp;
+    }
+
+    @Override
+    public int getId() {
+        return PACKET_ID;
+    }
+
+    @Override
+    public void serialize(@Nonnull ByteBuf buf) {
+        buf.writeLong(nonce);
+        buf.writeLong(timestamp);
+    }
+
+    @Override
+    public int computeSize() {
+        return 16;  // 2 longs = 16 bytes
+    }
+
+    public static ProxyPing deserialize(@Nonnull ByteBuf buf, int offset) {
+        ProxyPing ping = new ProxyPing();
+        ping.nonce = buf.getLong(offset);
+        ping.timestamp = buf.getLong(offset + Long.BYTES);
+        return ping;
+    }
+
+    public static ValidationResult validateStructure(@Nonnull ByteBuf buf, int offset) {
+        int readable = buf.readableBytes() - offset;
+        if (readable < 16) {
+            return ValidationResult.error("ProxyPing too small: " + readable + " bytes");
+        }
+        return ValidationResult.OK;
+    }
+}
+```
+
+#### Registering Custom Packets
+
+Register your packet in the `PacketRegistry` so it can be serialized/deserialized:
+
+```java
+// In your plugin initialization
+PacketRegistry.registerCustomPacket(
+    ProxyPing.PACKET_ID,
+    "ProxyPing",
+    ProxyPing.class,
+    16,  // Fixed size (0 for variable)
+    16,  // Max size
+    false,  // Compressed
+    ProxyPing::validateStructure,
+    ProxyPing::deserialize
+);
+```
+
+#### Built-in Custom Packets
+
+Numdrassl includes these custom packets for proxy-backend communication:
+
+| Packet | ID | Direction | Purpose |
+|--------|-----|-----------|---------|
+| `ProxyPing` | 998 | Proxy → Backend | Health check / latency measurement |
+| `ProxyPong` | 999 | Backend → Proxy | Response to ProxyPing |
+
+> **Note:** The `bridge-packets` module (placed in `earlyplugins/`) enables custom packet registration on the Hytale server by patching the `PacketRegistry` at startup.
 
 ### Installing Plugins
 
@@ -1001,7 +1140,7 @@ All compatible versions are listed in the release notes.
 
 Each release includes:
 - `proxy-*.jar` - Main proxy server
-- `api-*.jar` - Plugin API for developers  
+- `api-*.jar` - Plugin API for developers
 - `bridge-*.jar` - Backend server plugin
 
 ---
