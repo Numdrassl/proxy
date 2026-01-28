@@ -57,12 +57,13 @@ public class ProxyConfig {
     private boolean metricsEnabled = true;
     private int metricsPort = 9090;
     private int metricsLogIntervalSeconds = 60;
+
+    // Proxy Protocol configuration (HAProxy PROXY protocol)
+    private ProxyProtocolConfig proxyProtocol = new ProxyProtocolConfig();
+
     private static SecureRandom SECRET_RANDOM = new SecureRandom();
 
-    public ProxyConfig() {
-        // Default backend
-        backends.add(new BackendServer("lobby", "127.0.0.1", 5520, true));
-    }
+    public ProxyConfig() {}
 
     // ==================== Load / Save ====================
 
@@ -186,7 +187,29 @@ public class ProxyConfig {
             writer.write("# Port for metrics HTTP server (Prometheus scrape endpoint)\n");
             writer.write("metricsPort: " + metricsPort + "\n");
             writer.write("# Interval for logging metrics summary (0 to disable)\n");
-            writer.write("metricsLogIntervalSeconds: " + metricsLogIntervalSeconds + "\n");
+            writer.write("metricsLogIntervalSeconds: " + metricsLogIntervalSeconds + "\n\n");
+
+            // Proxy Protocol configuration
+            writer.write("# ==================== Proxy Protocol (HAProxy) ====================\n\n");
+            writer.write("# Enable HAProxy PROXY protocol support for DDoS protection services.\n");
+            writer.write("# This allows preserving client IPs through DDoS mitigation proxies.\n");
+            writer.write("# WARNING: Only enable if using a DDoS protection service!\n");
+            writer.write("proxyProtocol:\n");
+            writer.write("  # Enable PROXY protocol support\n");
+            writer.write("  enabled: " + proxyProtocol.isEnabled() + "\n");
+            writer.write("  # Whether PROXY protocol header is required (reject if missing)\n");
+            writer.write("  required: " + proxyProtocol.isRequired() + "\n");
+            writer.write("  # Timeout for receiving PROXY protocol header (seconds)\n");
+            writer.write("  headerTimeoutSeconds: " + proxyProtocol.getHeaderTimeoutSeconds() + "\n");
+            writer.write("  # Trusted proxy IPs (empty = trust all, NOT recommended!)\n");
+            writer.write("  # Example: [\"192.168.1.1\", \"10.0.0.1\", \"2001:db8::1\"]\n");
+            writer.write("  trustedProxies:\n");
+            for (String ip : proxyProtocol.getTrustedProxies()) {
+                writer.write("    - \"" + ip + "\"\n");
+            }
+            if (proxyProtocol.getTrustedProxies().isEmpty()) {
+                writer.write("    # Add trusted proxy IPs here\n");
+            }
         }
     }
 
@@ -267,6 +290,12 @@ public class ProxyConfig {
 
         if (redisPort == 0) {
             redisPort = 6379;
+            changed = true;
+        }
+
+        // Ensure proxy protocol config exists
+        if (proxyProtocol == null) {
+            proxyProtocol = new ProxyProtocolConfig();
             changed = true;
         }
 
@@ -484,5 +513,14 @@ public class ProxyConfig {
     public int getMetricsLogIntervalSeconds() { return metricsLogIntervalSeconds; }
     public void setMetricsLogIntervalSeconds(int metricsLogIntervalSeconds) { this.metricsLogIntervalSeconds = metricsLogIntervalSeconds; }
 
-}
+    // ==================== Proxy Protocol Getters/Setters ====================
 
+    public ProxyProtocolConfig getProxyProtocol() {
+        return proxyProtocol;
+    }
+
+    public void setProxyProtocol(ProxyProtocolConfig proxyProtocol) {
+        this.proxyProtocol = proxyProtocol != null ? proxyProtocol : new ProxyProtocolConfig();
+    }
+
+}
