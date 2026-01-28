@@ -12,15 +12,16 @@ import javax.annotation.Nonnull;
 import java.util.Objects;
 import java.util.Optional;
 
-/**
- * Handles connecting a client session to a backend server.
- *
- * <p>Determines the appropriate backend based on:</p>
- * <ul>
- *   <li>Pending referrals (server transfers)</li>
- *   <li>Default backend server</li>
- * </ul>
- */
+    /**
+     * Handles connecting a client session to a backend server.
+     *
+     * <p>Determines the appropriate backend based on:</p>
+     * <ul>
+     *   <li>Pending referrals (server transfers)</li>
+     *   <li>Hostname/SNI-based routing (if configured)</li>
+     *   <li>Default backend server</li>
+     * </ul>
+     */
 public final class BackendConnectionHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BackendConnectionHandler.class);
@@ -71,6 +72,17 @@ public final class BackendConnectionHandler {
                 LOGGER.info("Session {}: Player {} transferred to backend {}",
                     session.getSessionId(), connect.username, backend.getName());
                 return backend;
+            }
+        }
+
+        // Check hostname-based routing (SNI)
+        String clientHostname = session.getClientHostname();
+        if (clientHostname != null && !clientHostname.isEmpty()) {
+            BackendServer hostnameBackend = proxyCore.getConfig().getBackendByHostname(clientHostname);
+            if (hostnameBackend != null) {
+                LOGGER.info("Session {}: Routing to backend {} based on hostname {}",
+                    session.getSessionId(), hostnameBackend.getName(), clientHostname);
+                return hostnameBackend;
             }
         }
 

@@ -292,8 +292,14 @@ public final class ProxyCore {
         ProxyMetrics.getInstance().recordConnectionAccepted();
         ProxyMetrics.getInstance().incrementActiveSession();
 
-        LOGGER.info("New connection from {} (Session {})",
-            quicChannel.remoteAddress(), session.getSessionId());
+        String hostname = session.getClientHostname();
+        if (hostname != null) {
+            LOGGER.info("New connection from {} with hostname {} (Session {})",
+                quicChannel.remoteAddress(), hostname, session.getSessionId());
+        } else {
+            LOGGER.info("New connection from {} (Session {})",
+                quicChannel.remoteAddress(), session.getSessionId());
+        }
 
         eventManager.dispatchSessionCreated(session);
     }

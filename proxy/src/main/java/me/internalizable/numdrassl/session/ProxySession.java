@@ -12,6 +12,7 @@ import io.netty.incubator.codec.quic.QuicStreamChannel;
 import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
 import me.internalizable.numdrassl.api.player.Player;
 import me.internalizable.numdrassl.auth.CertificateExtractor;
+import me.internalizable.numdrassl.auth.SniExtractor;
 import me.internalizable.numdrassl.config.BackendServer;
 import me.internalizable.numdrassl.server.ProxyCore;
 import me.internalizable.numdrassl.server.network.ChatMessageConverter;
@@ -59,6 +60,7 @@ public final class ProxySession {
     private final long id;
     private final ProxyCore proxyCore;
     private final InetSocketAddress clientAddress;
+    private final String clientHostname; // SNI/hostname from TLS handshake
 
     // Composed components
     private final SessionChannels channels;
@@ -92,6 +94,9 @@ public final class ProxySession {
         this.authState = new SessionAuthState();
         this.packetSender = new PacketSender(id, channels);
 
+        // Extract hostname (SNI) - may be null if handshake not complete or SNI not provided
+        this.clientHostname = extractHostname(clientChannel);
+        
         extractCertificate(clientChannel);
     }
 
@@ -112,6 +117,19 @@ public final class ProxySession {
         }
     }
 
+    /**
+     * Extracts the hostname (SNI) from the TLS handshake.
+     * Returns null if SNI is not available or not provided.
+     */
+    @Nullable
+    private String extractHostname(@Nonnull QuicChannel channel) {
+        String hostname = SniExtractor.extractHostname(channel);
+        if (hostname != null) {
+            LOGGER.debug("Session {}: Extracted hostname from SNI: {}", id, hostname);
+        }
+        return hostname;
+    }
+
     // ==================== Identity ====================
 
     public long getSessionId() {
@@ -121,6 +139,16 @@ public final class ProxySession {
     @Nonnull
     public InetSocketAddress getClientAddress() {
         return clientAddress;
+    }
+
+    /**
+     * Gets the hostname (SNI) the client connected with.
+     *
+     * @return the hostname, or null if not available
+     */
+    @Nullable
+    public String getClientHostname() {
+        return clientHostname;
     }
 
     @Nonnull
