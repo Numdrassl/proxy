@@ -79,6 +79,8 @@ public final class ProxySession {
     // Transfer flag
     private volatile boolean serverTransfer = false;
 
+    private volatile boolean backendAvailable = true;
+
     // ==================== Construction ====================
 
     public ProxySession(@Nonnull ProxyCore proxyCore, @Nonnull QuicChannel clientChannel) {
@@ -326,13 +328,15 @@ public final class ProxySession {
      * Sends a packet to the backend server.
      */
     public void sendToBackend(@Nonnull Packet packet) {
-        packetSender.sendToBackend(packet);
+        sendToBackendRaw(packet);
     }
 
     /**
      * Sends data to the backend server.
      */
-    public void sendToBackend(@Nonnull Object obj) {
+    public void sendToBackendRaw(@Nonnull Object obj) {
+        if (!isBackendAvailable() || this.getState() == SessionState.TRANSFERRING || this.getState() == SessionState.DISCONNECTED) return;
+
         if (obj instanceof Packet packet) {
             packetSender.sendToBackend(packet);
         } else if (obj instanceof ByteBuf buf) {
@@ -516,7 +520,7 @@ public final class ProxySession {
         }
 
         // Create temporary backend
-        BackendServer temp = new BackendServer("temp-" + host + "-" + port, host, port, false);
+        BackendServer temp = new BackendServer("temp-" + host + "-" + port, host, port, false, null);
         return switchToServer(temp);
     }
 
@@ -532,6 +536,14 @@ public final class ProxySession {
         connect.language = id.language() != null ? id.language() : "";
         connect.clientType = id.clientType() != null ? id.clientType() : ClientType.Game;
         return connect;
+    }
+
+    public boolean isBackendAvailable() {
+        return backendAvailable;
+    }
+
+    public void markBackendDown() {
+        backendAvailable = false;
     }
 
     // ==================== Object Methods ====================

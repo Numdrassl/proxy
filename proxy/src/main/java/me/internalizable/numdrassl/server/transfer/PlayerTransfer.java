@@ -5,7 +5,6 @@ import com.hypixel.hytale.protocol.packets.auth.ClientReferral;
 import me.internalizable.numdrassl.api.player.TransferResult;
 import me.internalizable.numdrassl.config.BackendServer;
 import me.internalizable.numdrassl.server.ProxyCore;
-import me.internalizable.numdrassl.server.health.BackendHealthCache;
 import me.internalizable.numdrassl.session.ProxySession;
 import me.internalizable.numdrassl.session.SessionState;
 import org.slf4j.Logger;
@@ -39,60 +38,46 @@ public final class PlayerTransfer {
     /**
      * Transfers a player to a different backend server.
      *
-     * @param session the player's session
+     * @param session       the player's session
      * @param targetBackend the target backend server
      * @return a future completing with the transfer result
      */
     @Nonnull
-    public CompletableFuture<TransferResult> transfer(
-            @Nonnull ProxySession session,
-            @Nonnull BackendServer targetBackend) {
+    public CompletableFuture<TransferResult> transfer(@Nonnull ProxySession session, @Nonnull BackendServer targetBackend) {
 
         Objects.requireNonNull(session, "session");
         Objects.requireNonNull(targetBackend, "targetBackend");
 
-        BackendHealthCache cache = proxyCore.getBackendHealthCache();
-        if (cache == null) {
-            return CompletableFuture.completedFuture(
-                    TransferResult.failure("Internal error: backend health cache not initialized")
-            );
+        if (proxyCore.getBackendHealthManager() == null) {
+            return CompletableFuture.completedFuture(TransferResult.failure("Internal error: backend health manager not initialized"));
         }
 
-        return cache
-                .get(targetBackend, () -> proxyCore.getBackendConnector().checkBackendAlive(targetBackend, 1500))
-                .thenApply(alive -> {
-                    if(!alive) {
-                        return TransferResult.failure("Server is offline!");
-                    }
-                    return executeTransfer(session, targetBackend);
-                })
-                .exceptionally(ex -> {
-                    LOGGER.warn("Backend ({}) is not reachable: {}", targetBackend.getName(), ex.toString());
-                    return TransferResult.failure("Server is offline!");
-                });
+        return proxyCore.getBackendHealthManager().sendPingAsync(targetBackend, 1500).thenApply(ok -> {
+            if (!ok) {
+                LOGGER.warn("Backend ({}) did not respond in time", targetBackend.getName());
+                return TransferResult.failure("Server is offline!");
+            }
 
+            return executeTransfer(session, targetBackend);
+        });
     }
 
     /**
      * Transfers a player to a backend server by name.
      *
-     * @param session the player's session
+     * @param session     the player's session
      * @param backendName the name of the target backend
      * @return a future completing with the transfer result
      */
     @Nonnull
-    public CompletableFuture<TransferResult> transfer(
-            @Nonnull ProxySession session,
-            @Nonnull String backendName) {
+    public CompletableFuture<TransferResult> transfer(@Nonnull ProxySession session, @Nonnull String backendName) {
 
         Objects.requireNonNull(session, "session");
         Objects.requireNonNull(backendName, "backendName");
 
         BackendServer backend = proxyCore.getConfig().getBackendByName(backendName);
         if (backend == null) {
-            return CompletableFuture.completedFuture(
-                TransferResult.failure("Unknown backend server: " + backendName)
-            );
+            return CompletableFuture.completedFuture(TransferResult.failure("Unknown backend server: " + backendName));
         }
 
         return transfer(session, backend);
@@ -122,7 +107,7 @@ public final class PlayerTransfer {
     }
 
     private Optional<TransferResult> validateTransfer(ProxySession session, BackendServer targetBackend) {
-        if (session.getState() != SessionState.CONNECTED) {
+        if (session.getState() != SessionState.CONNECTED && session.getState() != SessionState.TRANSFERRING) {
             return Optional.of(TransferResult.failure("Player not connected"));
         }
 
@@ -143,8 +128,7 @@ public final class PlayerTransfer {
         int port = resolveProxyPort();
 
         if (port > MAX_PORT) {
-            LOGGER.error("Session {}: Port {} exceeds maximum ({}) for ClientReferral",
-                session.getSessionId(), port, MAX_PORT);
+            LOGGER.error("Session {}: Port {} exceeds maximum ({}) for ClientReferral", session.getSessionId(), port, MAX_PORT);
             return null;
         }
 
@@ -177,28 +161,17 @@ public final class PlayerTransfer {
 
     private void logTransferStart(ProxySession session, BackendServer targetBackend) {
         BackendServer current = session.getCurrentBackend();
-        LOGGER.info("Session {}: Initiating transfer for {} from {} to {}",
-            session.getSessionId(),
-            session.getPlayerName(),
-            current != null ? current.getName() : "unknown",
-            targetBackend.getName());
+        LOGGER.info("Session {}: Initiating transfer for {} from {} to {}", session.getSessionId(), session.getPlayerName(), current != null ? current.getName() : "unknown", targetBackend.getName());
     }
 
     private byte[] createReferralData(ProxySession session, BackendServer targetBackend) {
-        return proxyCore.getReferralManager().createReferral(
-            session.getPlayerUuid(),
-            targetBackend
-        );
+        return proxyCore.getReferralManager().createReferral(session.getPlayerUuid(), targetBackend);
     }
 
     private void sendClientReferral(ProxySession session, HostAddress address, byte[] referralData) {
         ClientReferral referral = new ClientReferral(address, referralData);
 
-        LOGGER.info("Session {}: Sending ClientReferral to {} -> {}:{}",
-            session.getSessionId(),
-            session.getPlayerName(),
-            address.host,
-            address.port);
+        LOGGER.info("Session {}: Sending ClientReferral to {} -> {}:{}", session.getSessionId(), session.getPlayerName(), address.host, address.port);
 
         session.sendToClient(referral);
     }

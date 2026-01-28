@@ -37,6 +37,10 @@ public final class BackendPacketHandler extends SimpleChannelInboundHandler<Obje
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Object msg) throws Exception {
+        if (session.getCurrentBackend() != null && proxyCore.getBackendHealthManager() != null) {
+            proxyCore.getBackendHealthManager().get(session.getCurrentBackend()).markPassiveResponse();
+        }
+
         if (msg instanceof ByteBuf raw) {
             ProxyMetrics.getInstance().recordPacketFromBackend("RawPacket", raw.readableBytes());
             handleRawPacket(ctx, raw);
@@ -114,6 +118,11 @@ public final class BackendPacketHandler extends SimpleChannelInboundHandler<Obje
 
         if (isTransferring()) {
             LOGGER.info("Session {}: Ignoring disconnect during server transfer", session.getSessionId());
+            return;
+        }
+
+        if (proxyCore.getConfig().isFallbackEnabled()) {
+            proxyCore.getBackendConnector().handleBackendDisconnect(session, session.getCurrentBackend());
             return;
         }
 

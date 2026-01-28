@@ -65,7 +65,7 @@ public final class ClientPacketHandler extends SimpleChannelInboundHandler<Objec
 
     private void handleRawPacket(ByteBuf raw) {
         if (session.getState() == SessionState.CONNECTED) {
-            session.sendToBackend(raw.retain());
+            session.sendToBackendRaw(raw.retain());
         } else {
             LOGGER.debug("Session {}: Dropping raw packet - not connected (state={})",
                 session.getSessionId(), session.getState());
