@@ -13,7 +13,12 @@ import me.internalizable.numdrassl.api.plugin.PluginManager;
 import me.internalizable.numdrassl.api.plugin.messaging.ChannelRegistrar;
 import me.internalizable.numdrassl.api.scheduler.Scheduler;
 import me.internalizable.numdrassl.api.server.RegisteredServer;
+import me.internalizable.numdrassl.api.event.Subscribe;
+import me.internalizable.numdrassl.api.event.cluster.ProxyLeaveClusterEvent;
+import me.internalizable.numdrassl.api.messaging.channel.Channels;
+import me.internalizable.numdrassl.api.messaging.message.ServerListMessage;
 import me.internalizable.numdrassl.cluster.NumdrasslClusterManager;
+import me.internalizable.numdrassl.cluster.handler.ServerListHandler;
 import me.internalizable.numdrassl.command.CommandEventListener;
 import me.internalizable.numdrassl.command.ConsoleCommandSource;
 import me.internalizable.numdrassl.command.NumdrasslCommandManager;
@@ -41,6 +46,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.LinkedHashMap;
 
 /**
  * Implementation of the public {@link ProxyServer} API interface.
@@ -72,8 +78,9 @@ public final class NumdrasslProxy implements ProxyServer {
     private final ApiEventBridge eventBridge;
     private final NumdrasslClusterManager clusterManager;
     private MessagingService messagingService;
+    private ServerListHandler serverListHandler;
 
-    // Server registry
+    // Server registry (local servers only)
     private final Map<String, NumdrasslRegisteredServer> servers = new ConcurrentHashMap<>();
 
     // Paths
@@ -108,7 +115,13 @@ public final class NumdrasslProxy implements ProxyServer {
             InetSocketAddress address = new InetSocketAddress(backend.getHost(), backend.getPort());
             NumdrasslRegisteredServer server = new NumdrasslRegisteredServer(backend.getName(), address);
             server.setDefault(backend.isDefaultServer());
-            servers.put(backend.getName().toLowerCase(), server);
+            String serverName = backend.getName().toLowerCase();
+            servers.put(serverName, server);
+            
+            // Publish to cluster if enabled
+            if (messagingService != null && clusterManager.isClusterMode()) {
+                publishServerRegistration(backend.getName(), backend.getHost(), backend.getPort(), backend.isDefaultServer());
+            }
         }
     }
 
@@ -136,6 +149,23 @@ public final class NumdrasslProxy implements ProxyServer {
                         config
                 );
                 clusterManager.initialize(messagingService, eventManager);
+                
+                // Initialize server list handler for cross-cluster server synchronization
+                this.serverListHandler = new ServerListHandler(messagingService, clusterManager.getLocalProxyId());
+                serverListHandler.setOnServerAdded(event -> {
+                    // Remote server added - already tracked in handler, no action needed
+                    LOGGER.debug("Remote server '{}' added from proxy {}", event.server().getName(), event.proxyId());
+                });
+                serverListHandler.setOnServerRemoved(event -> {
+                    // Remote server removed - already removed from handler, no action needed
+                    LOGGER.debug("Remote server '{}' removed from proxy {}", event.serverName(), event.proxyId());
+                });
+                serverListHandler.start();
+                
+                // Subscribe to proxy leave events to clean up servers
+                ProxyLeaveEventListener leaveListener = new ProxyLeaveEventListener();
+                eventManager.register(this, leaveListener);
+                
                 LOGGER.info("Cluster mode enabled - connected to Redis");
             } catch (Exception e) {
                 LOGGER.error("Failed to connect to Redis, falling back to local mode", e);
@@ -179,6 +209,13 @@ public final class NumdrasslProxy implements ProxyServer {
      */
     public void shutdownApi() {
         pluginManager.disablePlugins();
+        
+        // Stop server list handler
+        if (serverListHandler != null) {
+            serverListHandler.stop();
+            serverListHandler = null;
+        }
+        
         clusterManager.shutdown();
 
         if (messagingService instanceof RedisMessagingService redisService) {
@@ -325,14 +362,49 @@ public final class NumdrasslProxy implements ProxyServer {
     @Override
     @Nonnull
     public Collection<RegisteredServer> getAllServers() {
-        return Collections.unmodifiableCollection(servers.values());
+        // Combine local and remote servers
+        // Local servers take precedence if there's a name conflict
+        Map<String, RegisteredServer> allServers = new LinkedHashMap<>();
+        
+        // Add remote servers first (lower priority)
+        if (serverListHandler != null) {
+            for (NumdrasslRegisteredServer remoteServer : serverListHandler.getAllRemoteServers().values()) {
+                String key = remoteServer.getName().toLowerCase();
+                allServers.put(key, remoteServer);
+            }
+        }
+        
+        // Add local servers (higher priority - overwrites remote servers with same name)
+        for (NumdrasslRegisteredServer localServer : servers.values()) {
+            String key = localServer.getName().toLowerCase();
+            allServers.put(key, localServer);
+        }
+        
+        return Collections.unmodifiableCollection(allServers.values());
     }
 
     @Override
     @Nonnull
     public Optional<RegisteredServer> getServer(@Nonnull String name) {
         Objects.requireNonNull(name, "name");
-        return Optional.ofNullable(servers.get(name.toLowerCase()));
+        String key = name.toLowerCase();
+        
+        // Check local servers first (take precedence)
+        NumdrasslRegisteredServer local = servers.get(key);
+        if (local != null) {
+            return Optional.of(local);
+        }
+        
+        // Check remote servers
+        if (serverListHandler != null) {
+            Map<String, NumdrasslRegisteredServer> remoteServers = serverListHandler.getAllRemoteServers();
+            NumdrasslRegisteredServer remote = remoteServers.get(key);
+            if (remote != null) {
+                return Optional.of(remote);
+            }
+        }
+        
+        return Optional.empty();
     }
 
     @Override
@@ -342,14 +414,94 @@ public final class NumdrasslProxy implements ProxyServer {
         Objects.requireNonNull(address, "address");
 
         NumdrasslRegisteredServer server = new NumdrasslRegisteredServer(name, address);
-        servers.put(name.toLowerCase(), server);
+        String serverName = name.toLowerCase();
+        servers.put(serverName, server);
+        
+        // Publish to cluster if enabled
+        if (messagingService != null && clusterManager.isClusterMode()) {
+            publishServerRegistration(name, address.getHostString(), address.getPort(), false);
+        }
+        
         return server;
     }
 
     @Override
     public boolean unregisterServer(@Nonnull String name) {
         Objects.requireNonNull(name, "name");
-        return servers.remove(name.toLowerCase()) != null;
+        String serverName = name.toLowerCase();
+        boolean removed = servers.remove(serverName) != null;
+        
+        // Publish to cluster if enabled
+        if (removed && messagingService != null && clusterManager.isClusterMode()) {
+            publishServerUnregistration(name);
+        }
+        
+        return removed;
+    }
+    
+    // ==================== Server List Synchronization ====================
+    
+    /**
+     * Publishes a server registration message to the cluster.
+     *
+     * @param serverName the server name
+     * @param host the server host
+     * @param port the server port
+     * @param isDefault whether this is the default server
+     */
+    private void publishServerRegistration(@Nonnull String serverName, @Nonnull String host, int port, boolean isDefault) {
+        if (messagingService == null || !clusterManager.isClusterMode()) {
+            return;
+        }
+        
+        ServerListMessage message = ServerListMessage.register(
+                clusterManager.getLocalProxyId(),
+                serverName,
+                host,
+                port,
+                isDefault
+        );
+        
+        messagingService.publish(Channels.SERVER_LIST, message)
+                .exceptionally(e -> {
+                    LOGGER.warn("Failed to publish server registration for '{}': {}", serverName, e.getMessage());
+                    return null;
+                });
+    }
+    
+    /**
+     * Publishes a server unregistration message to the cluster.
+     *
+     * @param serverName the server name to unregister
+     */
+    private void publishServerUnregistration(@Nonnull String serverName) {
+        if (messagingService == null || !clusterManager.isClusterMode()) {
+            return;
+        }
+        
+        ServerListMessage message = ServerListMessage.unregister(
+                clusterManager.getLocalProxyId(),
+                serverName
+        );
+        
+        messagingService.publish(Channels.SERVER_LIST, message)
+                .exceptionally(e -> {
+                    LOGGER.warn("Failed to publish server unregistration for '{}': {}", serverName, e.getMessage());
+                    return null;
+                });
+    }
+    
+    /**
+     * Event listener for proxy leave events to clean up remote servers.
+     */
+    private class ProxyLeaveEventListener {
+        @Subscribe
+        public void onProxyLeave(@Nonnull ProxyLeaveClusterEvent event) {
+            if (serverListHandler != null) {
+                serverListHandler.removeProxyServers(event.getProxyId());
+                LOGGER.debug("Cleaned up servers from disconnected proxy: {}", event.getProxyId());
+            }
+        }
     }
 
     // ==================== Configuration ====================
@@ -425,6 +577,16 @@ public final class NumdrasslProxy implements ProxyServer {
     @Nonnull
     public ApiEventBridge getEventBridge() {
         return eventBridge;
+    }
+
+    /**
+     * Gets the server list handler (for cluster mode).
+     *
+     * @return the server list handler, or null if cluster mode is disabled
+     */
+    @Nullable
+    public ServerListHandler getServerListHandler() {
+        return serverListHandler;
     }
 }
 
