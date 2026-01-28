@@ -26,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Channels.TRANSFER   // numdrassl:transfer - Player transfers
  * Channels.PLUGIN     // numdrassl:plugin - Generic plugin messages
  * Channels.BROADCAST  // numdrassl:broadcast - Cluster-wide announcements
+ * Channels.SERVER_LIST // numdrassl:server-list - Backend server synchronization
  * }</pre>
  *
  * <h2>Custom Channels</h2>
@@ -79,6 +80,12 @@ public final class Channels {
      * Used for cluster-wide announcements.
      */
     public static final MessageChannel BROADCAST = registerSystem("broadcast");
+
+    /**
+     * Backend server list synchronization.
+     * Used to share registered backend servers across proxies in the cluster.
+     */
+    public static final MessageChannel SERVER_LIST = registerSystem("server-list");
 
     private Channels() {
         // Utility class
