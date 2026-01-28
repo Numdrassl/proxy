@@ -12,6 +12,7 @@ import io.netty.incubator.codec.quic.QuicStreamChannel;
 import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
 import me.internalizable.numdrassl.api.player.Player;
 import me.internalizable.numdrassl.auth.CertificateExtractor;
+import me.internalizable.numdrassl.auth.SniExtractor;
 import me.internalizable.numdrassl.config.BackendServer;
 import me.internalizable.numdrassl.server.ProxyCore;
 import me.internalizable.numdrassl.server.network.ChatMessageConverter;
@@ -59,6 +60,7 @@ public final class ProxySession {
     private final long id;
     private final ProxyCore proxyCore;
     private final InetSocketAddress clientAddress;
+    private final QuicChannel clientChannel; // Stored for lazy SNI extraction
 
     // Composed components
     private final SessionChannels channels;
@@ -69,6 +71,9 @@ public final class ProxySession {
     private final AtomicReference<SessionState> state = new AtomicReference<>(SessionState.HANDSHAKING);
     private final AtomicReference<PlayerIdentity> identity = new AtomicReference<>(PlayerIdentity.unknown());
     private final AtomicReference<BackendServer> currentBackend = new AtomicReference<>();
+    
+    // Lazy-loaded SNI hostname (extracted on first access)
+    private volatile String clientHostname;
 
     // Cached API player instance
     private final AtomicReference<Player> cachedPlayer = new AtomicReference<>();
@@ -88,10 +93,11 @@ public final class ProxySession {
         this.id = ID_GENERATOR.incrementAndGet();
         this.proxyCore = proxyCore;
         this.clientAddress = extractAddress(clientChannel);
+        this.clientChannel = clientChannel; // Store for lazy SNI extraction
         this.channels = new SessionChannels(id, clientChannel);
         this.authState = new SessionAuthState();
         this.packetSender = new PacketSender(id, channels);
-
+        
         extractCertificate(clientChannel);
     }
 
@@ -112,6 +118,22 @@ public final class ProxySession {
         }
     }
 
+    /**
+     * Extracts the hostname (SNI) from the TLS handshake.
+     * Returns null if SNI is not available or not provided.
+     * 
+     * <p>This method uses lazy initialization - SNI is extracted on first access
+     * to allow the TLS handshake to complete before attempting extraction.</p>
+     */
+    @Nullable
+    private String extractHostname(@Nonnull QuicChannel channel) {
+        String hostname = SniExtractor.extractHostname(channel);
+        if (hostname != null) {
+            LOGGER.debug("Session {}: Extracted hostname from SNI: {}", id, hostname);
+        }
+        return hostname;
+    }
+
     // ==================== Identity ====================
 
     public long getSessionId() {
@@ -121,6 +143,28 @@ public final class ProxySession {
     @Nonnull
     public InetSocketAddress getClientAddress() {
         return clientAddress;
+    }
+
+    /**
+     * Gets the hostname (SNI) the client connected with.
+     *
+     * <p>Uses lazy initialization - SNI is extracted on first access to allow
+     * the TLS handshake to complete before attempting extraction.</p>
+     *
+     * @return the hostname, or null if not available
+     */
+    @Nullable
+    public String getClientHostname() {
+        // Lazy initialization: extract SNI on first access
+        if (clientHostname == null && clientChannel != null) {
+            synchronized (this) {
+                // Double-check after acquiring lock
+                if (clientHostname == null) {
+                    clientHostname = extractHostname(clientChannel);
+                }
+            }
+        }
+        return clientHostname;
     }
 
     @Nonnull

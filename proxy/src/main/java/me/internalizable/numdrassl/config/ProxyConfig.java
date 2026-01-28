@@ -147,12 +147,18 @@ public class ProxyConfig {
             // Backend servers
             writer.write("# ==================== Backend Servers ====================\n\n");
             writer.write("# List of backend servers players can connect to\n");
+            writer.write("# hostname: Optional hostname/SNI for host-based routing\n");
+            writer.write("#           If set, connections with this hostname route to this backend\n");
+            writer.write("#           Example: play.example.com -> lobby, survival.example.com -> survival\n");
             writer.write("backends:\n");
             for (BackendServer backend : backends) {
                 writer.write("  - name: \"" + backend.getName() + "\"\n");
                 writer.write("    host: \"" + backend.getHost() + "\"\n");
                 writer.write("    port: " + backend.getPort() + "\n");
                 writer.write("    defaultServer: " + backend.isDefaultServer() + "\n");
+                if (backend.getHostname() != null && !backend.getHostname().isEmpty()) {
+                    writer.write("    hostname: \"" + backend.getHostname() + "\"\n");
+                }
             }
             writer.write("\n");
 
@@ -240,6 +246,9 @@ public class ProxyConfig {
             backends.add(new BackendServer("lobby", "127.0.0.1", 5520, true));
             changed = true;
         }
+
+        // Validate hostname uniqueness
+        validateHostnameUniqueness();
 
         if (clusterEnabled == null) {
             clusterEnabled = false;
@@ -408,6 +417,45 @@ public class ProxyConfig {
                 .filter(b -> b.getName().equalsIgnoreCase(name))
                 .findFirst()
                 .orElse(null);
+    }
+
+    /**
+     * Gets a backend server by its configured hostname/SNI.
+     *
+     * @param hostname the hostname to look up (case-insensitive)
+     * @return the backend server, or null if not found
+     */
+    public BackendServer getBackendByHostname(String hostname) {
+        if (hostname == null || hostname.isEmpty()) {
+            return null;
+        }
+        return backends.stream()
+                .filter(b -> b.hasHostname() && b.getHostname().equalsIgnoreCase(hostname))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Validates that all configured hostnames are unique across backends.
+     *
+     * @throws IllegalStateException if duplicate hostnames are found
+     */
+    private void validateHostnameUniqueness() {
+        java.util.Map<String, String> hostnameToBackend = new java.util.HashMap<>();
+        
+        for (BackendServer backend : backends) {
+            if (backend.hasHostname()) {
+                String normalizedHostname = backend.getHostname().toLowerCase();
+                String existingBackend = hostnameToBackend.put(normalizedHostname, backend.getName());
+                
+                if (existingBackend != null) {
+                    throw new IllegalStateException(
+                        String.format("Duplicate hostname '%s' found in backends '%s' and '%s'. " +
+                            "Each hostname must be unique for deterministic routing.",
+                            backend.getHostname(), existingBackend, backend.getName()));
+                }
+            }
+        }
     }
 
     // ==================== Cluster Getters/Setters ====================

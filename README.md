@@ -32,6 +32,7 @@ A BungeeCord/Velocity-style proxy server for Hytale, built using Netty QUIC. All
 ### Core Functionality
 - **QUIC Protocol Support** - Native QUIC transport with BBR congestion control for low-latency connections
 - **Multi-Backend Support** - Route players to different backend servers (lobby, minigames, etc.)
+- **Host-Based Routing** - Route players to specific backends based on hostname/SNI (e.g., play.example.com → lobby, survival.example.com → survival)
 - **Player Transfer** - Seamless server switching via `/server` command
 - **Packet Interception** - Decode, inspect, modify, or cancel packets in transit
 
@@ -127,6 +128,26 @@ See [Backend Server Setup](#backend-server-setup-bridge) for detailed instructio
 
 ## Configuration
 
+### Host-Based Routing
+
+Numdrassl supports routing players to different backend servers based on the hostname they connect with (SNI). This allows you to have multiple hostnames pointing to the same proxy IP, with each routing to a different backend.
+
+**Example Setup:**
+- `play.example.com` → routes to `lobby` backend
+- `survival.example.com` → routes to `survival` backend
+- `minigames.example.com` → routes to `minigames` backend
+
+**DNS Configuration:**
+```text
+play.example.com      A    192.168.1.50
+survival.example.com  A    192.168.1.50
+minigames.example.com A    192.168.1.50
+```
+
+All three hostnames point to the same proxy IP (`192.168.1.50`), but the proxy routes each to its configured backend based on the SNI hostname sent during the TLS handshake.
+
+**Note:** Host-based routing requires SNI (Server Name Indication) support. Most modern clients send SNI automatically. If SNI is not available, connections fall back to the default backend.
+
 ### Proxy Configuration (`config/proxy.yml`)
 
 ```yaml
@@ -174,19 +195,25 @@ proxySecret: "your-shared-secret-here"
 # ==================== Backend Servers ====================
 
 # List of backend servers players can connect to
+# hostname: Optional hostname/SNI for host-based routing
+#           If set, connections with this hostname route to this backend
+#           Example: play.example.com -> lobby, survival.example.com -> survival
 backends:
   - name: "lobby"
     host: "127.0.0.1"
     port: 5520
     defaultServer: true
+    hostname: "play.example.com"  # Optional: route play.example.com to lobby
   - name: "survival"
     host: "192.168.1.100"
     port: 5520
     defaultServer: false
+    hostname: "survival.example.com"  # Optional: route survival.example.com to survival
   - name: "minigames"
     host: "192.168.1.101"
     port: 5520
     defaultServer: false
+    # No hostname set - only accessible via /server command or default fallback
 
 # ==================== Metrics Configuration ====================
 
