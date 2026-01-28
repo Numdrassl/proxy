@@ -387,7 +387,24 @@ public final class NumdrasslProxy implements ProxyServer {
     @Nonnull
     public Optional<RegisteredServer> getServer(@Nonnull String name) {
         Objects.requireNonNull(name, "name");
-        return Optional.ofNullable(servers.get(name.toLowerCase()));
+        String key = name.toLowerCase();
+        
+        // Check local servers first (take precedence)
+        NumdrasslRegisteredServer local = servers.get(key);
+        if (local != null) {
+            return Optional.of(local);
+        }
+        
+        // Check remote servers
+        if (serverListHandler != null) {
+            Map<String, NumdrasslRegisteredServer> remoteServers = serverListHandler.getAllRemoteServers();
+            NumdrasslRegisteredServer remote = remoteServers.get(key);
+            if (remote != null) {
+                return Optional.of(remote);
+            }
+        }
+        
+        return Optional.empty();
     }
 
     @Override
@@ -560,6 +577,16 @@ public final class NumdrasslProxy implements ProxyServer {
     @Nonnull
     public ApiEventBridge getEventBridge() {
         return eventBridge;
+    }
+
+    /**
+     * Gets the server list handler (for cluster mode).
+     *
+     * @return the server list handler, or null if cluster mode is disabled
+     */
+    @Nullable
+    public ServerListHandler getServerListHandler() {
+        return serverListHandler;
     }
 }
 

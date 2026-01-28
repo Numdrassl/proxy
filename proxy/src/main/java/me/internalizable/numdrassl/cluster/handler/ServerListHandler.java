@@ -141,6 +141,23 @@ public final class ServerListHandler {
         return allServers;
     }
 
+    /**
+     * Find which proxy owns a server by name.
+     *
+     * @param serverName the server name (case-insensitive)
+     * @return the proxy ID that owns this server, or empty if not found
+     */
+    @Nonnull
+    public Optional<String> findProxyForServer(@Nonnull String serverName) {
+        String key = serverName.toLowerCase();
+        for (Map.Entry<String, Map<String, NumdrasslRegisteredServer>> entry : remoteServersByProxy.entrySet()) {
+            if (entry.getValue().containsKey(key)) {
+                return Optional.of(entry.getKey());
+            }
+        }
+        return Optional.empty();
+    }
+
     // ==================== Message Handling ====================
 
     private void handleMessage(@Nonnull ServerListMessage message) {
