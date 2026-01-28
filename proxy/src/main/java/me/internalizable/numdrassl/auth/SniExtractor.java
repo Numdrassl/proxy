@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.net.ssl.SSLEngine;
+import java.net.InetAddress;
 import java.util.Objects;
 
 /**
@@ -68,14 +69,16 @@ public final class SniExtractor {
 
             // Method 2: Try Netty's standard SNI attribute
             try {
-                AttributeKey<String> nettySniKey = AttributeKey.valueOf("io.netty.handler.ssl.SNI_HOSTNAME");
+                @SuppressWarnings("unchecked")
+                AttributeKey<String> nettySniKey = (AttributeKey<String>) AttributeKey.valueOf("io.netty.handler.ssl.SNI_HOSTNAME");
                 String nettyHostname = channel.attr(nettySniKey).get();
                 if (nettyHostname != null && !nettyHostname.isEmpty()) {
                     LOGGER.debug("Extracted hostname from Netty SNI attribute: {}", nettyHostname);
                     return nettyHostname;
                 }
-            } catch (Exception e) {
+            } catch (IllegalStateException e) {
                 // Attribute key might not exist, continue to next method
+                LOGGER.trace("Netty SNI attribute not available: {}", e.getMessage());
             }
 
             // Method 3: Try SSL session peer host (less reliable for server-side SNI)
@@ -90,7 +93,7 @@ public final class SniExtractor {
                         // Only use if it looks like a hostname (contains dots, not an IP)
                         if (peerHost != null && !peerHost.isEmpty() && 
                             !peerHost.equals("null") && peerHost.contains(".") &&
-                            !peerHost.matches("^\\d+\\.\\d+\\.\\d+\\.\\d+$")) {
+                            !looksLikeIpAddress(peerHost)) {
                             LOGGER.debug("Extracted hostname from SSL session peer host: {}", peerHost);
                             return peerHost;
                         }
@@ -121,5 +124,22 @@ public final class SniExtractor {
         Objects.requireNonNull(hostname, "hostname");
         channel.attr(SNI_HOSTNAME_KEY).set(hostname);
         LOGGER.debug("Set SNI hostname in channel: {}", hostname);
+    }
+
+    /**
+     * Checks if a string looks like an IP address (IPv4 or IPv6).
+     *
+     * @param host the host string to check
+     * @return true if the string is a valid IP address, false otherwise
+     */
+    private static boolean looksLikeIpAddress(@Nonnull String host) {
+        try {
+            InetAddress addr = InetAddress.getByName(host);
+            // If the hostname resolves to the same string, it's an IP address
+            return addr.getHostAddress().equals(host);
+        } catch (Exception e) {
+            // If parsing fails, it's not a valid IP address
+            return false;
+        }
     }
 }

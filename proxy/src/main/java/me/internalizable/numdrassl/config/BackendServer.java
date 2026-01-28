@@ -22,10 +22,7 @@ public class BackendServer {
     }
 
     public BackendServer(String name, String host, int port, boolean defaultServer, String hostname) {
-        this.name = name;
-        this.host = host;
-        this.port = port;
-        this.defaultServer = defaultServer;
+        this(name, host, port, defaultServer);
         this.hostname = hostname;
     }
 

@@ -294,8 +294,10 @@ public final class ProxyCore {
 
         String hostname = session.getClientHostname();
         if (hostname != null) {
+            // Sanitize hostname to prevent log injection
+            String sanitizedHostname = sanitizeHostname(hostname);
             LOGGER.info("New connection from {} with hostname {} (Session {})",
-                quicChannel.remoteAddress(), hostname, session.getSessionId());
+                quicChannel.remoteAddress(), sanitizedHostname, session.getSessionId());
         } else {
             LOGGER.info("New connection from {} (Session {})",
                 quicChannel.remoteAddress(), session.getSessionId());
@@ -443,4 +445,31 @@ public final class ProxyCore {
 
     @Nullable
     public BackendHealthCache getBackendHealthCache() { return backendHealthCache; }
+
+    // ==================== Hostname Sanitization ====================
+
+    /**
+     * Sanitizes a hostname for safe logging to prevent log injection attacks.
+     *
+     * @param hostname the raw hostname from SNI
+     * @return sanitized hostname safe for logging
+     */
+    private String sanitizeHostname(@Nonnull String hostname) {
+        // Remove control characters (newlines, carriage returns, etc.)
+        String sanitized = hostname.replaceAll("[\\r\\n\\t]", "");
+        
+        // Validate against safe hostname pattern (RFC 1123)
+        // Allow: alphanumeric, dots, hyphens
+        if (!sanitized.matches("^[a-zA-Z0-9][a-zA-Z0-9.-]*$")) {
+            // If invalid, truncate to safe characters only
+            sanitized = sanitized.replaceAll("[^a-zA-Z0-9.-]", "");
+        }
+        
+        // Truncate if too long (max 253 chars per RFC 1123)
+        if (sanitized.length() > 253) {
+            sanitized = sanitized.substring(0, 253);
+        }
+        
+        return sanitized.isEmpty() ? "[invalid]" : sanitized;
+    }
 }

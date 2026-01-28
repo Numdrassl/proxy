@@ -60,7 +60,7 @@ public final class ProxySession {
     private final long id;
     private final ProxyCore proxyCore;
     private final InetSocketAddress clientAddress;
-    private final String clientHostname; // SNI/hostname from TLS handshake
+    private final QuicChannel clientChannel; // Stored for lazy SNI extraction
 
     // Composed components
     private final SessionChannels channels;
@@ -71,6 +71,9 @@ public final class ProxySession {
     private final AtomicReference<SessionState> state = new AtomicReference<>(SessionState.HANDSHAKING);
     private final AtomicReference<PlayerIdentity> identity = new AtomicReference<>(PlayerIdentity.unknown());
     private final AtomicReference<BackendServer> currentBackend = new AtomicReference<>();
+    
+    // Lazy-loaded SNI hostname (extracted on first access)
+    private volatile String clientHostname;
 
     // Cached API player instance
     private final AtomicReference<Player> cachedPlayer = new AtomicReference<>();
@@ -90,12 +93,10 @@ public final class ProxySession {
         this.id = ID_GENERATOR.incrementAndGet();
         this.proxyCore = proxyCore;
         this.clientAddress = extractAddress(clientChannel);
+        this.clientChannel = clientChannel; // Store for lazy SNI extraction
         this.channels = new SessionChannels(id, clientChannel);
         this.authState = new SessionAuthState();
         this.packetSender = new PacketSender(id, channels);
-
-        // Extract hostname (SNI) - may be null if handshake not complete or SNI not provided
-        this.clientHostname = extractHostname(clientChannel);
         
         extractCertificate(clientChannel);
     }
@@ -120,6 +121,9 @@ public final class ProxySession {
     /**
      * Extracts the hostname (SNI) from the TLS handshake.
      * Returns null if SNI is not available or not provided.
+     * 
+     * <p>This method uses lazy initialization - SNI is extracted on first access
+     * to allow the TLS handshake to complete before attempting extraction.</p>
      */
     @Nullable
     private String extractHostname(@Nonnull QuicChannel channel) {
@@ -144,10 +148,22 @@ public final class ProxySession {
     /**
      * Gets the hostname (SNI) the client connected with.
      *
+     * <p>Uses lazy initialization - SNI is extracted on first access to allow
+     * the TLS handshake to complete before attempting extraction.</p>
+     *
      * @return the hostname, or null if not available
      */
     @Nullable
     public String getClientHostname() {
+        // Lazy initialization: extract SNI on first access
+        if (clientHostname == null && clientChannel != null) {
+            synchronized (this) {
+                // Double-check after acquiring lock
+                if (clientHostname == null) {
+                    clientHostname = extractHostname(clientChannel);
+                }
+            }
+        }
         return clientHostname;
     }
 

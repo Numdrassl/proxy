@@ -247,6 +247,9 @@ public class ProxyConfig {
             changed = true;
         }
 
+        // Validate hostname uniqueness
+        validateHostnameUniqueness();
+
         if (clusterEnabled == null) {
             clusterEnabled = false;
             changed = true;
@@ -430,6 +433,29 @@ public class ProxyConfig {
                 .filter(b -> b.hasHostname() && b.getHostname().equalsIgnoreCase(hostname))
                 .findFirst()
                 .orElse(null);
+    }
+
+    /**
+     * Validates that all configured hostnames are unique across backends.
+     *
+     * @throws IllegalStateException if duplicate hostnames are found
+     */
+    private void validateHostnameUniqueness() {
+        java.util.Map<String, String> hostnameToBackend = new java.util.HashMap<>();
+        
+        for (BackendServer backend : backends) {
+            if (backend.hasHostname()) {
+                String normalizedHostname = backend.getHostname().toLowerCase();
+                String existingBackend = hostnameToBackend.put(normalizedHostname, backend.getName());
+                
+                if (existingBackend != null) {
+                    throw new IllegalStateException(
+                        String.format("Duplicate hostname '%s' found in backends '%s' and '%s'. " +
+                            "Each hostname must be unique for deterministic routing.",
+                            backend.getHostname(), existingBackend, backend.getName()));
+                }
+            }
+        }
     }
 
     // ==================== Cluster Getters/Setters ====================

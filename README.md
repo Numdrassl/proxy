@@ -138,7 +138,7 @@ Numdrassl supports routing players to different backend servers based on the hos
 - `minigames.example.com` → routes to `minigames` backend
 
 **DNS Configuration:**
-```
+```text
 play.example.com      A    192.168.1.50
 survival.example.com  A    192.168.1.50
 minigames.example.com A    192.168.1.50
