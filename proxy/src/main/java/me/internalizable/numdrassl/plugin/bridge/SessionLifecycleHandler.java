@@ -1,9 +1,11 @@
 package me.internalizable.numdrassl.plugin.bridge;
 
+import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
 import me.internalizable.numdrassl.api.event.connection.AsyncLoginEvent;
 import me.internalizable.numdrassl.api.event.connection.DisconnectEvent;
 import me.internalizable.numdrassl.api.event.connection.PostLoginEvent;
 import me.internalizable.numdrassl.api.event.connection.PreLoginEvent;
+import me.internalizable.numdrassl.api.event.player.PlayerTransferEvent;
 import me.internalizable.numdrassl.api.event.server.ServerConnectedEvent;
 import me.internalizable.numdrassl.api.event.server.ServerPreConnectEvent;
 import me.internalizable.numdrassl.api.player.Player;
@@ -35,6 +37,7 @@ import java.util.concurrent.CompletableFuture;
  *   <li>{@link DisconnectEvent} - When a session closes</li>
  *   <li>{@link ServerPreConnectEvent} - Before connecting to a backend</li>
  *   <li>{@link ServerConnectedEvent} - After successful backend connection</li>
+ *   <li>{@link PlayerTransferEvent} - When a player is being transferred</li>
  * </ul>
  */
 public final class SessionLifecycleHandler {
@@ -308,6 +311,64 @@ public final class SessionLifecycleHandler {
             ServerConnectedEvent event = new ServerConnectedEvent(player, server, previousServer);
             eventManager.fireSync(event);
         }
+    }
+
+    /**
+     * Fires a PlayerTransferEvent and returns the processed result.
+     *
+     * <p>This is called before any player transfer, whether initiated by
+     * a backend server or by the proxy itself.</p>
+     *
+     * @param session the player session
+     * @param targetBackend the requested target backend server
+     * @return the result containing the final target, or denial reason
+     */
+    @Nonnull
+    public PlayerTransferBridgeResult onPlayerTransfer(
+            @Nonnull ProxySession session,
+            @Nonnull BackendServer targetBackend) {
+
+        Objects.requireNonNull(session, "session");
+        Objects.requireNonNull(targetBackend, "targetBackend");
+
+        Player player = getOrCreatePlayer(session);
+        if (player == null) {
+            return PlayerTransferBridgeResult.allow(targetBackend);
+        }
+
+        RegisteredServer currentServer = resolveServerFromSession(session);
+        RegisteredServer targetServer = resolveServer(targetBackend);
+
+        PlayerTransferEvent event = new PlayerTransferEvent(player, currentServer, targetServer);
+        eventManager.fireSync(event);
+
+        return processPlayerTransferResult(session, targetBackend, event.getResult());
+    }
+
+    private PlayerTransferBridgeResult processPlayerTransferResult(
+            ProxySession session,
+            BackendServer originalBackend,
+            PlayerTransferEvent.PlayerTransferResult result) {
+
+        if (!result.isAllowed()) {
+            ChatMessageBuilder message = result.getDenyMessage();
+            LOGGER.debug("Session {}: PlayerTransfer denied by plugin: {}",
+                    session.getSessionId(), message != null ? message.toPlainText() : "No reason provided");
+
+            return PlayerTransferBridgeResult.deny(message);
+        }
+
+        RegisteredServer targetServer = result.getServer();
+        if (targetServer != null && !targetServer.getName().equalsIgnoreCase(originalBackend.getName())) {
+            BackendServer newBackend = findBackend(targetServer.getName());
+            if (newBackend != null) {
+                LOGGER.debug("Session {}: Transfer redirected from {} to {}",
+                    session.getSessionId(), originalBackend.getName(), newBackend.getName());
+                return PlayerTransferBridgeResult.redirect(newBackend);
+            }
+        }
+
+        return PlayerTransferBridgeResult.allow(originalBackend);
     }
 
     // ==================== Helper Methods ====================
