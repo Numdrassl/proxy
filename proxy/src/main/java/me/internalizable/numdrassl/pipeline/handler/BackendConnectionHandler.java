@@ -1,7 +1,9 @@
 package me.internalizable.numdrassl.pipeline.handler;
 
 import com.hypixel.hytale.protocol.packets.connection.Connect;
+import me.internalizable.numdrassl.api.event.player.PlayerChooseInitialServerEvent;
 import me.internalizable.numdrassl.config.BackendServer;
+import me.internalizable.numdrassl.plugin.NumdrasslProxy;
 import me.internalizable.numdrassl.server.ProxyCore;
 import me.internalizable.numdrassl.session.ProxySession;
 import me.internalizable.numdrassl.session.SessionState;
@@ -74,6 +76,13 @@ public final class BackendConnectionHandler {
             }
         }
 
+        PlayerChooseInitialServerEvent.InitialServerResult initialServerResult = firePlayerChooseInitialServerEvent();
+        if (initialServerResult.getMode().equals(PlayerChooseInitialServerEvent.InitialServerResult.InitialServerMode.CUSTOM)) {
+            if (initialServerResult.getInitialServer() != null) {
+                return proxyCore.getConfig().getBackendByName(initialServerResult.getInitialServer().getName());
+            }
+        }
+
         // Fall back to default backend
         return proxyCore.getConfig().getDefaultBackend();
     }
@@ -86,6 +95,15 @@ public final class BackendConnectionHandler {
             session.getSessionId(), backend.getName());
 
         proxyCore.getBackendConnector().connect(session, backend, connect);
+    }
+
+    private PlayerChooseInitialServerEvent.InitialServerResult firePlayerChooseInitialServerEvent() {
+        NumdrasslProxy apiProxy = proxyCore.getApiProxy();
+        if (apiProxy == null) {
+            return PlayerChooseInitialServerEvent.InitialServerResult.useDefault();
+        }
+
+        return apiProxy.getEventBridge().firePlayerChooseInitialServerEvent(session);
     }
 }
 
