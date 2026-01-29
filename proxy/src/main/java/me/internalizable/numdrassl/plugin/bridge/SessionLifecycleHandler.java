@@ -314,8 +314,10 @@ public final class SessionLifecycleHandler {
     /**
      * Determines the initial backend server for a proxy session by firing
      * a {@link PlayerChooseInitialServerEvent}.
-     *
-     * @return the event result or {@code null} if no override was provided
+     * <p>
+     * @param session the proxy session
+     * @return the event result indicating DEFAULT or CUSTOM server selection
+     * </p>
      */
     public PlayerChooseInitialServerEvent.InitialServerResult onPlayerChooseInitialServerEvent(@Nonnull ProxySession session) {
         Objects.requireNonNull(session, "session");
