@@ -321,6 +321,10 @@ public final class SessionLifecycleHandler {
         Objects.requireNonNull(session, "session");
 
         Player player = getOrCreatePlayer(session);
+        if (player == null) {
+            LOGGER.warn("Session {}: Cannot fire PlayerChooseInitialServerEvent - no player identity", session.getSessionId());
+            return PlayerChooseInitialServerEvent.InitialServerResult.useDefault();
+        }
 
         PlayerChooseInitialServerEvent event = new PlayerChooseInitialServerEvent(player);
         eventManager.fireSync(event);
