@@ -272,6 +272,25 @@ public final class ChatMessageBuilder {
         );
     }
 
+    /**
+     * Returns the plain text content without any formatting.
+     *
+     * <p>Useful for logging or when a plain text representation is needed.</p>
+     *
+     * @return the concatenated text of all parts
+     */
+    @Nonnull
+    public String toPlainText() {
+        StringBuilder sb = new StringBuilder();
+        for (FormattedMessagePart part : parts) {
+            String text = part.getText();
+            if (text != null) {
+                sb.append(text);
+            }
+        }
+        return sb.toString();
+    }
+
     // ==================== Internal ====================
 
     private FormattedMessagePart createPart(

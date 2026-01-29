@@ -256,6 +256,7 @@ Priorities (in order): `FIRST` → `EARLY` → `NORMAL` → `LATE` → `LAST`
 | Event | Description | Cancellable |
 |-------|-------------|-------------|
 | `PreLoginEvent` | Before authentication, only IP known | Yes |
+| `AsyncLoginEvent` | Async login phase for non-blocking I/O (database, API calls) | Yes |
 | `LoginEvent` | During authentication, player info known | Yes |
 | `PostLoginEvent` | After successful authentication | No |
 | `DisconnectEvent` | Player disconnected | No |
@@ -268,6 +269,7 @@ Priorities (in order): `FIRST` → `EARLY` → `NORMAL` → `LATE` → `LAST`
 | `PlayerMoveEvent` | Player moves | Yes |
 | `PlayerBlockPlaceEvent` | Player places block | Yes |
 | `PlayerSlotChangeEvent` | Player changes hotbar slot | No |
+| `PlayerTransferEvent` | Player is being transferred to another server | Yes (can redirect) |
 
 #### Server Events
 | Event | Description | Cancellable |
@@ -325,6 +327,134 @@ public void onBlockPlace(PlayerBlockPlaceEvent event) {
     }
 }
 ```
+
+### Async Login (Database/API Loading)
+
+Use `AsyncLoginEvent` to perform non-blocking I/O operations during login without freezing the proxy. This is the correct place to load player data from databases, external APIs, or any heavy operation:
+
+```java
+import me.internalizable.numdrassl.api.event.Subscribe;
+import me.internalizable.numdrassl.api.event.connection.AsyncLoginEvent;
+
+import java.util.concurrent.CompletableFuture;
+
+public class MyListener {
+
+    @Subscribe
+    public void onAsyncLogin(AsyncLoginEvent event) {
+        // Create async task for database loading
+        CompletableFuture<Void> dbTask = CompletableFuture.runAsync(() -> {
+            User user = database.load(event.getPlayer().getUniqueId());
+
+            if (user.isBanned()) {
+                event.setResult(AsyncLoginEvent.AsyncLoginResult.denied("You are banned!"));
+            }
+        });
+
+        // Register task — proxy waits for completion before proceeding
+        event.registerTask(dbTask);
+    }
+}
+```
+
+**How it works:**
+- The event is fired synchronously, but plugins register `CompletableFuture` tasks
+- The proxy waits for **all** registered tasks to complete before proceeding with the login
+- Multiple plugins can each register their own tasks — all run in parallel
+- If any task calls `setResult(denied(...))`, the player is disconnected
+
+**Use this for:** database lookups, permission loading, ban checks, API calls, or any I/O that would block the proxy if done synchronously.
+
+### Transfer Interception
+
+Use `PlayerTransferEvent` to intercept, deny, or redirect player transfers. This event fires for all transfer types: backend-initiated transfers (via `referToServer()`), proxy commands, and API calls.
+
+```java
+import me.internalizable.numdrassl.api.event.Subscribe;
+import me.internalizable.numdrassl.api.event.player.PlayerTransferEvent;
+import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
+
+public class MyListener {
+
+    @Subscribe
+    public void onPlayerTransfer(PlayerTransferEvent event) {
+        var player = event.getPlayer();
+        var target = event.getTargetServer();
+
+        // Prevent transferring to the same server
+        event.getCurrentServer().ifPresent(current -> {
+            if (current.getName().equals(target.getName())) {
+                event.setResult(PlayerTransferEvent.PlayerTransferResult.denied(
+                    ChatMessageBuilder.create().red("You are already on this server!")
+                ));
+            }
+        });
+    }
+}
+```
+
+**Deny with permission check:**
+
+```java
+@Subscribe
+public void onPlayerTransfer(PlayerTransferEvent event) {
+    var target = event.getTargetServer();
+
+    if (target.getName().startsWith("vip-") && !event.getPlayer().hasPermission("server.vip")) {
+        event.setResult(PlayerTransferEvent.PlayerTransferResult.denied(
+            ChatMessageBuilder.create()
+                .red("[X] ")
+                .gray("You need ")
+                .gold("VIP")
+                .gray(" rank to access this server!")
+        ));
+    }
+}
+```
+
+**Redirect to load-balanced server:**
+
+```java
+@Subscribe
+public void onPlayerTransfer(PlayerTransferEvent event) {
+    if (event.getTargetServer().getName().equals("lobby")) {
+        String bestLobby = findLeastLoadedLobby();
+        proxy.getServer(bestLobby).ifPresent(server -> {
+            event.setResult(PlayerTransferEvent.PlayerTransferResult.allowed(server));
+        });
+    }
+}
+```
+
+**Silent denial:**
+
+```java
+@Subscribe
+public void onPlayerTransfer(PlayerTransferEvent event) {
+    if (isServerUnderMaintenance(event.getTargetServer().getName())) {
+        event.setResult(PlayerTransferEvent.PlayerTransferResult.denied());
+    }
+}
+```
+
+**API Reference:**
+
+| `PlayerTransferEvent` Method | Description |
+|------------------------------|-------------|
+| `getPlayer()` | The player being transferred |
+| `getCurrentServer()` | `Optional<RegisteredServer>` — current server (if connected) |
+| `getTargetServer()` | The requested target server |
+| `getResult()` | Current transfer result |
+| `setResult(PlayerTransferResult)` | Set the transfer result |
+
+| `PlayerTransferResult` Factory | Description |
+|-------------------------------|-------------|
+| `allowed(RegisteredServer)` | Allow transfer (optionally redirect to different server) |
+| `denied()` | Deny silently (no message shown) |
+| `denied(String)` | Deny with plain text message |
+| `denied(ChatMessageBuilder)` | Deny with formatted message |
+
+> **Note:** This event is synchronous. All player data should be loaded during `AsyncLoginEvent` and kept in memory during the session. Avoid database queries or heavy I/O inside this event handler.
 
 ---
 
