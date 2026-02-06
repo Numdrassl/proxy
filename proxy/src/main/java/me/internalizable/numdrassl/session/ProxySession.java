@@ -9,6 +9,7 @@ import com.hypixel.hytale.protocol.packets.interface_.ServerMessage;
 import io.netty.buffer.ByteBuf;
 import io.netty.incubator.codec.quic.QuicChannel;
 import io.netty.incubator.codec.quic.QuicStreamChannel;
+import java.util.List;
 import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
 import me.internalizable.numdrassl.api.player.Player;
 import me.internalizable.numdrassl.auth.CertificateExtractor;
@@ -347,6 +348,34 @@ public final class ProxySession {
      */
     public void sendToServer(@Nonnull Packet packet) {
         sendToBackend(packet);
+    }
+
+    // ==================== Raw Packet Batch Fast Path ====================
+
+    /**
+     * Sends an entire batch of raw packets to the client stream as a single
+     * cross-event-loop task (write all + flush).
+     *
+     * <p>Used by the backend packet handler's fast path for forwarding raw
+     * (unregistered) packets. All buffered packets from a single Netty read batch
+     * are submitted as ONE task on the client event loop, reducing scheduling
+     * overhead from O(N) to O(1).</p>
+     *
+     * @param packets the batch of raw packets (ownership transfers to this method)
+     */
+    public void sendRawBatchToClient(@Nonnull List<ByteBuf> packets) {
+        packetSender.sendRawBatchToClient(packets);
+    }
+
+    /**
+     * Sends an entire batch of raw packets to the backend stream as a single
+     * cross-event-loop task (write all + flush).
+     *
+     * @param packets the batch of raw packets (ownership transfers to this method)
+     * @see #sendRawBatchToClient(List) for design rationale
+     */
+    public void sendRawBatchToBackend(@Nonnull List<ByteBuf> packets) {
+        packetSender.sendRawBatchToBackend(packets);
     }
 
     /**

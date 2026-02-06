@@ -20,23 +20,41 @@ public final class PacketEventManager {
 
     private final List<PacketListener> listeners = new CopyOnWriteArrayList<>();
 
+    /**
+     * Fast-check flag to skip dispatch when no listeners are registered.
+     * Volatile ensures visibility across Netty event loop threads without locking.
+     */
+    private volatile boolean hasListeners = false;
+
     public void registerListener(@Nonnull PacketListener listener) {
         Objects.requireNonNull(listener, "listener");
         listeners.add(listener);
+        hasListeners = true;
         LOGGER.info("Registered packet listener: {}", listener.getClass().getSimpleName());
     }
 
     public void unregisterListener(@Nonnull PacketListener listener) {
         Objects.requireNonNull(listener, "listener");
         listeners.remove(listener);
+        hasListeners = !listeners.isEmpty();
     }
 
     public void clearListeners() {
         listeners.clear();
+        hasListeners = false;
+    }
+
+    /**
+     * Returns true if any packet listeners are registered.
+     * Can be used by handlers to skip event dispatch overhead entirely.
+     */
+    public boolean hasListeners() {
+        return hasListeners;
     }
 
     @Nullable
     public <T extends Packet> T dispatchClientPacket(@Nonnull ProxySession session, @Nonnull T packet) {
+        if (!hasListeners) return packet;
         Objects.requireNonNull(session, "session");
         Objects.requireNonNull(packet, "packet");
         return dispatchPacket(session, packet, PacketDirection.CLIENT_TO_SERVER, true);
@@ -44,6 +62,7 @@ public final class PacketEventManager {
 
     @Nullable
     public <T extends Packet> T dispatchServerPacket(@Nonnull ProxySession session, @Nonnull T packet) {
+        if (!hasListeners) return packet;
         Objects.requireNonNull(session, "session");
         Objects.requireNonNull(packet, "packet");
         return dispatchPacket(session, packet, PacketDirection.SERVER_TO_CLIENT, false);
