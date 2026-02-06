@@ -152,13 +152,12 @@ public final class NumdrasslProxy implements ProxyServer {
     }
 
     private void registerBuiltinCommands() {
-        commandManager.register(this, new HelpCommand(commandManager));
         commandManager.register(this, new AuthCommand(core));
         commandManager.register(this, new SessionsCommand(core));
         commandManager.register(this, new StopCommand(core), "shutdown", "end");
-        commandManager.register(this, new ServerCommand(), "srv");
+        commandManager.register(this, new ServerCommand(), "srv", "send");
         commandManager.register(this, new FindCommand(), "find-server");
-        commandManager.register(this, new NumdrasslCommand(), "nd", "proxy");
+        commandManager.register(this, new NumdrasslCommand(commandManager), "nd", "proxy");
         commandManager.register(this, new MetricsCommand(), "stats", "perf", "performance");
     }
 

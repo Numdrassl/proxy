@@ -4,6 +4,7 @@ import me.internalizable.numdrassl.api.event.connection.AsyncLoginEvent;
 import me.internalizable.numdrassl.api.event.connection.DisconnectEvent;
 import me.internalizable.numdrassl.api.event.connection.PostLoginEvent;
 import me.internalizable.numdrassl.api.event.connection.PreLoginEvent;
+import me.internalizable.numdrassl.api.event.player.PlayerChooseInitialServerEvent;
 import me.internalizable.numdrassl.api.event.server.ServerConnectedEvent;
 import me.internalizable.numdrassl.api.event.server.ServerDisconnectedEvent;
 import me.internalizable.numdrassl.api.event.server.ServerDisconnectedResult;
@@ -335,6 +336,28 @@ public final class SessionLifecycleHandler {
         }
 
         return null;
+    }
+    /**
+     * Determines the initial backend server for a proxy session by firing
+     * a {@link PlayerChooseInitialServerEvent}.
+     * <p>
+     * @param session the proxy session
+     * @return the event result indicating DEFAULT or CUSTOM server selection
+     * </p>
+     */
+    public PlayerChooseInitialServerEvent.InitialServerResult onPlayerChooseInitialServerEvent(@Nonnull ProxySession session) {
+        Objects.requireNonNull(session, "session");
+
+        Player player = getOrCreatePlayer(session);
+        if (player == null) {
+            LOGGER.warn("Session {}: Cannot fire PlayerChooseInitialServerEvent - no player identity", session.getSessionId());
+            return PlayerChooseInitialServerEvent.InitialServerResult.useDefault();
+        }
+
+        PlayerChooseInitialServerEvent event = new PlayerChooseInitialServerEvent(player);
+        eventManager.fireSync(event);
+
+        return event.getResult();
     }
 
     // ==================== Helper Methods ====================

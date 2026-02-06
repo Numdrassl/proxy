@@ -24,6 +24,8 @@ import java.util.concurrent.TimeUnit;
  */
 public class MetricsCommand implements Command {
 
+    private static final String PERMISSION_BASE = "numdrassl.command.metrics";
+
     @Override
     @Nonnull
     public String getName() {
@@ -33,6 +35,11 @@ public class MetricsCommand implements Command {
     @Override
     public String getDescription() {
         return "Show proxy performance metrics";
+    }
+
+    @Override
+    public String getPermission() {
+        return PERMISSION_BASE;
     }
 
     @Override

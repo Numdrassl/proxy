@@ -6,10 +6,12 @@ import me.internalizable.numdrassl.api.command.Command;
 import me.internalizable.numdrassl.api.command.CommandResult;
 import me.internalizable.numdrassl.api.command.CommandSource;
 import me.internalizable.numdrassl.api.player.Player;
+import me.internalizable.numdrassl.command.NumdrasslCommandManager;
 import me.internalizable.numdrassl.plugin.permission.FilePermissionProvider;
 import me.internalizable.numdrassl.plugin.permission.NumdrasslPermissionManager;
 
 import javax.annotation.Nonnull;
+import java.util.Collection;
 import java.util.Set;
 import java.util.UUID;
 
@@ -25,8 +27,15 @@ import java.util.UUID;
  */
 public class NumdrasslCommand implements Command {
 
+    private final NumdrasslCommandManager commandManager;
+
     private static final String PERMISSION_BASE = "numdrassl.command.numdrassl";
     private static final String PERMISSION_PERM = "numdrassl.command.permission";
+
+
+    public NumdrasslCommand(NumdrasslCommandManager commandManager) {
+        this.commandManager = commandManager;
+    }
 
     @Override
     @Nonnull
@@ -43,7 +52,7 @@ public class NumdrasslCommand implements Command {
     @Override
     @Nonnull
     public String getUsage() {
-        return "/numdrassl <version|perm|reload> [args...]";
+        return "/numdrassl <help|version|perm|reload> [args...]";
     }
 
     @Override
@@ -63,6 +72,7 @@ public class NumdrasslCommand implements Command {
         String[] subArgs = dropFirst(args);
 
         return switch (subCommand) {
+            case "commands", "cmd" -> showCommands(source);
             case "version", "ver", "v" -> showVersion(source);
             case "perm", "perms", "permission", "permissions" -> handlePermissions(source, subArgs);
             case "reload" -> handleReload(source);
@@ -403,8 +413,37 @@ public class NumdrasslCommand implements Command {
             .yellow("/numdrassl perm ...")
             .gray(" - Permission management"));
         sendMessage(source, ChatMessageBuilder.create()
+                .yellow("/numdrassl cmd")
+                .gray(" - Show all commands"));
+        sendMessage(source, ChatMessageBuilder.create()
             .yellow("/numdrassl reload")
             .gray(" - Reload configuration"));
+
+        return CommandResult.success();
+    }
+
+    private CommandResult showCommands(CommandSource source) {
+        sendMessage(source, ChatMessageBuilder.create()
+                .gold("--- Available Commands ---"));
+
+        Collection<String> commands = commandManager.getCommands();
+        for (String cmd : commands) {
+            Command command = commandManager.getCommand(cmd);
+            if (command != null) {
+                String desc = command.getDescription();
+                if (desc != null && !desc.isEmpty()) {
+                    sendMessage(source, ChatMessageBuilder.create()
+                        .yellow("/" + cmd)
+                        .gray(" - " + desc));
+                } else {
+                    sendMessage(source, ChatMessageBuilder.create()
+                            .yellow("/" + cmd));
+                }
+            } else {
+                sendMessage(source, ChatMessageBuilder.create()
+                        .yellow("/" + cmd));
+            }
+        }
 
         return CommandResult.success();
     }

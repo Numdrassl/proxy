@@ -19,6 +19,8 @@ import java.util.List;
  */
 public class AuthCommand implements Command {
 
+    private static final String PERMISSION_BASE = "numdrassl.command.auth";
+
     private static final Logger LOGGER = LoggerFactory.getLogger(AuthCommand.class);
     private final ProxyCore proxyCore;
 
@@ -43,13 +45,18 @@ public class AuthCommand implements Command {
     }
 
     @Override
+    public String getPermission() {
+        return PERMISSION_BASE;
+    }
+
+    @Override
     @Nonnull
     public CommandResult execute(@Nonnull CommandSource source, @Nonnull String[] args) {
         if (source.isPlayer()) {
             source.sendMessage(ChatMessageBuilder.create()
                     .red("[X] ")
                     .gray("This command can only be used from the console."));
-            return CommandResult.failure("This command can only be used from the console");
+            return CommandResult.failure();
         }
 
         if (args.length < 1) {
@@ -75,7 +82,7 @@ public class AuthCommand implements Command {
         ProxyAuthenticator authenticator = proxyCore.getAuthenticator();
         if (authenticator == null) {
             source.sendMessage("Authenticator not available");
-            return CommandResult.failure("Authenticator not available");
+            return CommandResult.failure();
         }
 
         if (authenticator.isAuthenticated()) {
