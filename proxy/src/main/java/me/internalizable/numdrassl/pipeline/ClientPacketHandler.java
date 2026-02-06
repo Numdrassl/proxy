@@ -7,6 +7,7 @@ import com.hypixel.hytale.protocol.packets.connection.Disconnect;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.util.ReferenceCountUtil;
 import me.internalizable.numdrassl.pipeline.handler.BackendConnectionHandler;
 import me.internalizable.numdrassl.pipeline.handler.ClientAuthenticationHandler;
 import me.internalizable.numdrassl.profiling.ProxyMetrics;
@@ -17,6 +18,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -37,6 +40,14 @@ public final class ClientPacketHandler extends SimpleChannelInboundHandler<Objec
     private final ClientAuthenticationHandler authHandler;
     private final BackendConnectionHandler connectionHandler;
 
+    /**
+     * Buffer for raw packets received within a single Netty read batch.
+     * All buffered packets are submitted as a single cross-event-loop task
+     * in {@link #channelReadComplete(ChannelHandlerContext)}, reducing
+     * scheduling overhead from O(N) to O(1) per batch.
+     */
+    private List<ByteBuf> pendingRawToBackend = new ArrayList<>();
+
     public ClientPacketHandler(@Nonnull ProxyCore proxyCore, @Nonnull ProxySession session) {
         this.proxyCore = Objects.requireNonNull(proxyCore, "proxyCore");
         this.session = Objects.requireNonNull(session, "session");
@@ -47,7 +58,6 @@ public final class ClientPacketHandler extends SimpleChannelInboundHandler<Objec
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Object msg) throws Exception {
         if (msg instanceof ByteBuf raw) {
-            ProxyMetrics.getInstance().recordPacketFromClient("RawPacket", raw.readableBytes());
             handleRawPacket(raw);
             return;
         }
@@ -61,11 +71,29 @@ public final class ClientPacketHandler extends SimpleChannelInboundHandler<Objec
         dispatchPacket(packet);
     }
 
+    @Override
+    public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+        // Submit all buffered raw packets as a single cross-event-loop task.
+        // This reduces scheduling overhead from O(N) tasks to O(1) per read batch.
+        if (!pendingRawToBackend.isEmpty()) {
+            List<ByteBuf> batch = pendingRawToBackend;
+            pendingRawToBackend = new ArrayList<>();
+            session.sendRawBatchToBackend(batch);
+        }
+        super.channelReadComplete(ctx);
+    }
+
     // ==================== Packet Routing ====================
 
     private void handleRawPacket(ByteBuf raw) {
+        // Fast path: buffer raw packets for batch submission.
+        // Instead of submitting each packet as a separate cross-event-loop task,
+        // we buffer them and submit the entire batch in channelReadComplete().
         if (session.getState() == SessionState.CONNECTED) {
-            session.sendToBackend(raw.retain());
+            int bytes = raw.readableBytes();
+            pendingRawToBackend.add(raw.retain());
+            ProxyMetrics.getInstance().recordRawBytesFromClient(bytes);
+            ProxyMetrics.getInstance().recordRawBytesToBackend(bytes);
         } else {
             LOGGER.debug("Session {}: Dropping raw packet - not connected (state={})",
                 session.getSessionId(), session.getState());
@@ -119,8 +147,16 @@ public final class ClientPacketHandler extends SimpleChannelInboundHandler<Objec
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         LOGGER.info("Session {}: Client stream closed", session.getSessionId());
+        releasePendingBuffers();
         cleanupSession();
         super.channelInactive(ctx);
+    }
+
+    private void releasePendingBuffers() {
+        for (ByteBuf buf : pendingRawToBackend) {
+            ReferenceCountUtil.safeRelease(buf);
+        }
+        pendingRawToBackend.clear();
     }
 
     private void cleanupSession() {
@@ -134,6 +170,7 @@ public final class ClientPacketHandler extends SimpleChannelInboundHandler<Objec
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         LOGGER.error("Session {}: Exception in client handler", session.getSessionId(), cause);
+        releasePendingBuffers();
         session.disconnect("Internal error: " + cause.getMessage());
     }
 }
