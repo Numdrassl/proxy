@@ -13,6 +13,8 @@ import javax.annotation.Nonnull;
  */
 public class SessionsCommand implements Command {
 
+    private static final String PERMISSION_BASE = "numdrassl.command.sessions";
+
     private final ProxyCore proxyCore;
 
     public SessionsCommand(ProxyCore proxyCore) {
@@ -28,6 +30,11 @@ public class SessionsCommand implements Command {
     @Override
     public String getDescription() {
         return "List all active player sessions";
+    }
+
+    @Override
+    public String getPermission() {
+        return PERMISSION_BASE;
     }
 
     @Override

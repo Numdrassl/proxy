@@ -108,12 +108,14 @@ public final class SessionChannels {
     public void closeBackend() {
         QuicStreamChannel bs = backendStream.getAndSet(null);
         if (bs != null && bs.isActive()) {
+            bs.flush();
             bs.close();
             LOGGER.debug("Session {}: Closed backend stream", sessionId);
         }
 
         QuicChannel bc = backendChannel.getAndSet(null);
         if (bc != null && bc.isActive()) {
+            bc.flush();
             bc.close();
             LOGGER.debug("Session {}: Closed backend channel", sessionId);
         }
@@ -125,11 +127,13 @@ public final class SessionChannels {
     public void closeClient() {
         QuicStreamChannel cs = clientStream.getAndSet(null);
         if (cs != null && cs.isActive()) {
+            cs.flush();
             cs.close();
             LOGGER.debug("Session {}: Closed client stream", sessionId);
         }
 
         if (clientChannel.isActive()) {
+            clientChannel.flush();
             clientChannel.close();
             LOGGER.debug("Session {}: Closed client channel", sessionId);
         }

@@ -20,48 +20,53 @@ import java.util.UUID;
 public class ProxyConfig {
 
     // Network configuration
-    private String bindAddress = "0.0.0.0";
-    private int bindPort = 24322;
-    private String publicAddress = null;
-    private int publicPort = 0;
+    private String bindAddress;
+    private Integer bindPort;
+    private String publicAddress;
+    private Integer publicPort;
 
     // TLS configuration
-    private String certificatePath = "certs/server.crt";
-    private String privateKeyPath = "certs/server.key";
+    private String certificatePath;
+    private String privateKeyPath;
 
     // Connection limits
-    private int maxConnections = 1000;
-    private int connectionTimeoutSeconds = 30;
+    private Integer maxConnections;
+    private Integer connectionTimeoutSeconds;
 
     // Debug options
-    private Boolean debugMode = false;
-    private Boolean passthroughMode = false;
+    private Boolean debugMode;
+    private Boolean passthroughMode;
 
     // Backend authentication
-    private String proxySecret = null;
+    private String proxySecret;
 
     // Backend servers
     private List<BackendServer> backends = new ArrayList<>();
 
     // Cluster/Redis configuration
-    private Boolean clusterEnabled = false;
-    private String proxyId = null;
-    private String proxyRegion = "default";
-    private String redisHost = "localhost";
-    private int redisPort = 6379;
-    private String redisPassword = null;
-    private Boolean redisSsl = false;
-    private int redisDatabase = 0;
+    private Boolean clusterEnabled;
+    private String proxyId;
+    private String proxyRegion;
+    private String redisHost;
+    private Integer redisPort;
+    private String redisPassword;
+    private Boolean redisSsl ;
+    private Integer redisDatabase;
 
     // Metrics configuration
-    private boolean metricsEnabled = true;
-    private int metricsPort = 9090;
-    private int metricsLogIntervalSeconds = 60;
-    private static SecureRandom SECRET_RANDOM = new SecureRandom();
+    private Boolean metricsEnabled;
+    private Integer metricsPort;
+    private Integer metricsLogIntervalSeconds;
+
+    // Fallback configuration
+    private Boolean fallbackEnabled;
+    private String globalFallbackServer;
+
+    private static final SecureRandom SECRET_RANDOM = new SecureRandom();
 
     public ProxyConfig() {
         // Default backend
-        backends.add(new BackendServer("lobby", "127.0.0.1", 5520, true));
+        backends.add(new BackendServer("lobby", "127.0.0.1", 5521, true, null));
     }
 
     // ==================== Load / Save ====================
@@ -76,10 +81,6 @@ public class ProxyConfig {
 
         LoaderOptions options = new LoaderOptions();
         Constructor constructor = new Constructor(ProxyConfig.class, options);
-
-        PropertyUtils propertyUtils = new PropertyUtils();
-        propertyUtils.setSkipMissingProperties(true);
-        constructor.setPropertyUtils(propertyUtils);
 
         Yaml yaml = new Yaml(constructor);
 
@@ -153,6 +154,7 @@ public class ProxyConfig {
                 writer.write("    host: \"" + backend.getHost() + "\"\n");
                 writer.write("    port: " + backend.getPort() + "\n");
                 writer.write("    defaultServer: " + backend.isDefaultServer() + "\n");
+                writer.write("    fallbackServer: " + backend.getFallbackServer() + "\n");
             }
             writer.write("\n");
 
@@ -186,7 +188,14 @@ public class ProxyConfig {
             writer.write("# Port for metrics HTTP server (Prometheus scrape endpoint)\n");
             writer.write("metricsPort: " + metricsPort + "\n");
             writer.write("# Interval for logging metrics summary (0 to disable)\n");
-            writer.write("metricsLogIntervalSeconds: " + metricsLogIntervalSeconds + "\n");
+            writer.write("metricsLogIntervalSeconds: " + metricsLogIntervalSeconds + "\n\n");
+
+            // Fallback configuration
+            writer.write("# ==================== Fallback Configuration ====================\n\n");
+            writer.write("# Enable/disable automatic fallback when a backend becomes unavailable\n");
+            writer.write("fallbackEnabled: " + fallbackEnabled + "\n");
+            writer.write("# Global fallback server (used if no backend-specific fallback is set)\n");
+            writer.write("globalFallbackServer: \"" + globalFallbackServer + "\"\n\n");
         }
     }
 
@@ -197,8 +206,18 @@ public class ProxyConfig {
             bindAddress = "0.0.0.0";
             changed = true;
         }
-        if (bindPort == 0) {
+        if (bindPort == null) {
             bindPort = 24322;
+            changed = true;
+        }
+
+        if (publicAddress == null) {
+            publicAddress = "127.0.0.1";
+            changed = true;
+        }
+
+        if (publicPort == null) {
+            publicPort = 5520;
             changed = true;
         }
 
@@ -211,11 +230,11 @@ public class ProxyConfig {
             changed = true;
         }
 
-        if (maxConnections <= 0) {
+        if (maxConnections == null || maxConnections <= 0) {
             maxConnections = 1000;
             changed = true;
         }
-        if (connectionTimeoutSeconds <= 0) {
+        if (connectionTimeoutSeconds == null || connectionTimeoutSeconds <= 0) {
             connectionTimeoutSeconds = 30;
             changed = true;
         }
@@ -237,7 +256,7 @@ public class ProxyConfig {
 
         if (backends == null) backends = new ArrayList<>();
         if (backends.isEmpty()) {
-            backends.add(new BackendServer("lobby", "127.0.0.1", 5520, true));
+            backends.add(new BackendServer("lobby", "127.0.0.1", 5520, true, null));
             changed = true;
         }
 
@@ -265,8 +284,33 @@ public class ProxyConfig {
             changed = true;
         }
 
-        if (redisPort == 0) {
+        if (redisPort == null) {
             redisPort = 6379;
+            changed = true;
+        }
+
+        if (metricsEnabled == null) {
+            metricsEnabled = true;
+            changed = true;
+        }
+
+        if (metricsPort == null) {
+            metricsPort = 9090;
+            changed = true;
+        }
+
+        if (metricsLogIntervalSeconds == null) {
+            metricsLogIntervalSeconds = 60;
+            changed = true;
+        }
+
+        if (fallbackEnabled == null) {
+            fallbackEnabled = false;
+            changed = true;
+        }
+
+        if (globalFallbackServer == null || globalFallbackServer.isBlank()) {
+            globalFallbackServer = "lobby";
             changed = true;
         }
 
@@ -470,19 +514,35 @@ public class ProxyConfig {
         this.redisSsl = redisSsl;
     }
 
-    public int getRedisDatabase() { return redisDatabase; }
-    public void setRedisDatabase(int redisDatabase) { this.redisDatabase = redisDatabase; }
+    public Integer getRedisDatabase() { return redisDatabase; }
+    public void setRedisDatabase(Integer redisDatabase) { this.redisDatabase = redisDatabase; }
 
     // ==================== Metrics Getters/Setters ====================
 
-    public boolean isMetricsEnabled() { return metricsEnabled; }
-    public void setMetricsEnabled(boolean metricsEnabled) { this.metricsEnabled = metricsEnabled; }
+    public Boolean isMetricsEnabled() { return metricsEnabled; }
+    public void setMetricsEnabled(Boolean metricsEnabled) { this.metricsEnabled = metricsEnabled; }
 
-    public int getMetricsPort() { return metricsPort; }
-    public void setMetricsPort(int metricsPort) { this.metricsPort = metricsPort; }
+    public Integer getMetricsPort() { return metricsPort; }
+    public void setMetricsPort(Integer metricsPort) { this.metricsPort = metricsPort; }
 
-    public int getMetricsLogIntervalSeconds() { return metricsLogIntervalSeconds; }
-    public void setMetricsLogIntervalSeconds(int metricsLogIntervalSeconds) { this.metricsLogIntervalSeconds = metricsLogIntervalSeconds; }
+    public Integer getMetricsLogIntervalSeconds() { return metricsLogIntervalSeconds; }
+    public void setMetricsLogIntervalSeconds(Integer metricsLogIntervalSeconds) { this.metricsLogIntervalSeconds = metricsLogIntervalSeconds; }
 
+    // ==================== Fallback Getters/Setters ====================
+
+    public Boolean isFallbackEnabled() { return fallbackEnabled; }
+    public String getGlobalFallbackServer() { return globalFallbackServer; }
+
+    public Boolean getFallbackEnabled() {
+        return fallbackEnabled;
+    }
+
+    public void setFallbackEnabled(Boolean fallbackEnabled) {
+        this.fallbackEnabled = fallbackEnabled;
+    }
+
+    public void setGlobalFallbackServer(String globalFallbackServer) {
+        this.globalFallbackServer = globalFallbackServer;
+    }
 }
 

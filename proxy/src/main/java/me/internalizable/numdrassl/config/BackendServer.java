@@ -9,15 +9,17 @@ public class BackendServer {
     private String host;
     private int port;
     private boolean defaultServer;
+    private String fallbackServer;
 
     public BackendServer() {
     }
 
-    public BackendServer(String name, String host, int port, boolean defaultServer) {
+    public BackendServer(String name, String host, int port, boolean defaultServer, String fallbackServer) {
         this.name = name;
         this.host = host;
         this.port = port;
         this.defaultServer = defaultServer;
+        this.fallbackServer = fallbackServer;
     }
 
     public String getName() {
@@ -52,6 +54,14 @@ public class BackendServer {
         this.defaultServer = defaultServer;
     }
 
+    public void setFallbackServer(String fallbackServer) {
+        this.fallbackServer = fallbackServer;
+    }
+
+    public String getFallbackServer() {
+        return fallbackServer;
+    }
+
     @Override
     public String toString() {
         return "BackendServer{" +
@@ -59,6 +69,7 @@ public class BackendServer {
             ", host='" + host + '\'' +
             ", port=" + port +
             ", default=" + defaultServer +
+            ", fallbackServer=" + fallbackServer +
             '}';
     }
 }

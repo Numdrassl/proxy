@@ -12,6 +12,9 @@ import me.internalizable.numdrassl.api.server.RegisteredServer;
 import javax.annotation.Nonnull;
 
 public class FindCommand implements Command {
+
+    private static final String PERMISSION_BASE = "numdrassl.command.find";
+
     @Nonnull
     @Override
     public String getName() {
@@ -26,6 +29,11 @@ public class FindCommand implements Command {
     @Override
     public String getUsage() {
         return "/find <player-name>";
+    }
+
+    @Override
+    public String getPermission() {
+        return PERMISSION_BASE;
     }
 
     @Nonnull

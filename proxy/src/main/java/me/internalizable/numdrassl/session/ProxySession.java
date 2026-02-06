@@ -9,6 +9,7 @@ import com.hypixel.hytale.protocol.packets.interface_.ServerMessage;
 import io.netty.buffer.ByteBuf;
 import io.netty.incubator.codec.quic.QuicChannel;
 import io.netty.incubator.codec.quic.QuicStreamChannel;
+import java.util.List;
 import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
 import me.internalizable.numdrassl.api.player.Player;
 import me.internalizable.numdrassl.auth.CertificateExtractor;
@@ -78,6 +79,8 @@ public final class ProxySession {
 
     // Transfer flag
     private volatile boolean serverTransfer = false;
+
+    private volatile boolean backendAvailable = true;
 
     // ==================== Construction ====================
 
@@ -326,13 +329,15 @@ public final class ProxySession {
      * Sends a packet to the backend server.
      */
     public void sendToBackend(@Nonnull Packet packet) {
-        packetSender.sendToBackend(packet);
+        sendToBackendRaw(packet);
     }
 
     /**
      * Sends data to the backend server.
      */
-    public void sendToBackend(@Nonnull Object obj) {
+    public void sendToBackendRaw(@Nonnull Object obj) {
+        if (!isBackendAvailable() || this.getState() == SessionState.TRANSFERRING || this.getState() == SessionState.DISCONNECTED) return;
+
         if (obj instanceof Packet packet) {
             packetSender.sendToBackend(packet);
         } else if (obj instanceof ByteBuf buf) {
@@ -347,6 +352,34 @@ public final class ProxySession {
      */
     public void sendToServer(@Nonnull Packet packet) {
         sendToBackend(packet);
+    }
+
+    // ==================== Raw Packet Batch Fast Path ====================
+
+    /**
+     * Sends an entire batch of raw packets to the client stream as a single
+     * cross-event-loop task (write all + flush).
+     *
+     * <p>Used by the backend packet handler's fast path for forwarding raw
+     * (unregistered) packets. All buffered packets from a single Netty read batch
+     * are submitted as ONE task on the client event loop, reducing scheduling
+     * overhead from O(N) to O(1).</p>
+     *
+     * @param packets the batch of raw packets (ownership transfers to this method)
+     */
+    public void sendRawBatchToClient(@Nonnull List<ByteBuf> packets) {
+        packetSender.sendRawBatchToClient(packets);
+    }
+
+    /**
+     * Sends an entire batch of raw packets to the backend stream as a single
+     * cross-event-loop task (write all + flush).
+     *
+     * @param packets the batch of raw packets (ownership transfers to this method)
+     * @see #sendRawBatchToClient(List) for design rationale
+     */
+    public void sendRawBatchToBackend(@Nonnull List<ByteBuf> packets) {
+        packetSender.sendRawBatchToBackend(packets);
     }
 
     /**
@@ -516,7 +549,7 @@ public final class ProxySession {
         }
 
         // Create temporary backend
-        BackendServer temp = new BackendServer("temp-" + host + "-" + port, host, port, false);
+        BackendServer temp = new BackendServer("temp-" + host + "-" + port, host, port, false, null);
         return switchToServer(temp);
     }
 
@@ -532,6 +565,14 @@ public final class ProxySession {
         connect.language = id.language() != null ? id.language() : "";
         connect.clientType = id.clientType() != null ? id.clientType() : ClientType.Game;
         return connect;
+    }
+
+    public boolean isBackendAvailable() {
+        return backendAvailable;
+    }
+
+    public void markBackendDown() {
+        backendAvailable = false;
     }
 
     // ==================== Object Methods ====================

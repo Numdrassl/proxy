@@ -24,6 +24,12 @@ import java.util.Optional;
  */
 public class ServerCommand implements Command {
 
+    private static final String PERMISSION_BASE = "numdrassl.command.server";
+    private static final String PERMISSION_TRANSFER_SELF = "numdrassl.command.server.self"; //Allow transfering to other server self
+    private static final String PERMISSION_TRANSFER_OTHERS = "numdrassl.command.server.others"; //Allow transfering other players to other server
+    private static final String PERMISSION_TRANSFER_ALL = "numdrassl.command.server.all";
+
+
     @Override
     @Nonnull
     public String getName() {
@@ -41,6 +47,11 @@ public class ServerCommand implements Command {
     }
 
     @Override
+    public String getPermission() {
+        return PERMISSION_BASE;
+    }
+
+    @Override
     @Nonnull
     public CommandResult execute(@Nonnull CommandSource source, @Nonnull String[] args) {
         ProxyServer proxy = Numdrassl.getProxy();
@@ -55,6 +66,31 @@ public class ServerCommand implements Command {
 
         // Has target-player argument - transfer target to server
         if (args.length > 1) {
+
+            // Player is self
+            if (source.asPlayer().isPresent() && source.asPlayer().get().getUsername().equalsIgnoreCase(args[1])) {
+                if (!source.hasPermission(PERMISSION_TRANSFER_SELF) && !source.hasPermission(PERMISSION_TRANSFER_OTHERS)) {
+                    return CommandResult.noPermission();
+                }
+            } else if (!source.hasPermission(PERMISSION_TRANSFER_OTHERS)) {
+                return CommandResult.noPermission();
+            }
+
+
+            if (args[1].equalsIgnoreCase("all")) {
+                if (!source.hasPermission(PERMISSION_TRANSFER_ALL)) {
+                    return CommandResult.noPermission();
+                }
+                source.sendMessage(ChatMessageBuilder.create()
+                        .green("Transferring all (" + proxy.getAllPlayers().size() + ") players to " + args[0]));
+                for (Player targetPlayer : proxy.getAllPlayers()) {
+                    transferToServerInternal(source, targetPlayer, proxy, args[0]);
+                }
+
+                return CommandResult.success();
+            }
+
+
             // Find target player
             Optional<Player> targetOpt = proxy.getPlayer(args[1]);
             if (targetOpt.isEmpty()) {
@@ -76,6 +112,10 @@ public class ServerCommand implements Command {
                     .red("[X] ")
                     .gray("Only players can switch servers."));
             return CommandResult.success();
+        }
+
+        if (!source.hasPermission(PERMISSION_TRANSFER_SELF) && !source.hasPermission(PERMISSION_TRANSFER_OTHERS)) {
+            return CommandResult.noPermission();
         }
 
         return transferToServerInternal(source, playerOpt.get(), proxy, args[0]);

@@ -12,6 +12,8 @@ import javax.annotation.Nonnull;
  */
 public class StopCommand implements Command {
 
+    private static final String PERMISSION_BASE = "numdrassl.command.stop";
+
     private final ProxyCore proxyCore;
 
     public StopCommand(ProxyCore proxyCore) {
@@ -27,6 +29,11 @@ public class StopCommand implements Command {
     @Override
     public String getDescription() {
         return "Stop the proxy server";
+    }
+
+    @Override
+    public String getPermission() {
+        return PERMISSION_BASE;
     }
 
     @Override

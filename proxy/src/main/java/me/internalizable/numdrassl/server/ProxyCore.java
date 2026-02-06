@@ -28,7 +28,8 @@ import me.internalizable.numdrassl.profiling.MetricsHistory;
 import me.internalizable.numdrassl.profiling.MetricsHttpServer;
 import me.internalizable.numdrassl.profiling.MetricsLogger;
 import me.internalizable.numdrassl.profiling.ProxyMetrics;
-import me.internalizable.numdrassl.server.health.BackendHealthCache;
+import me.internalizable.numdrassl.server.health.BackendHealthManager;
+import me.internalizable.numdrassl.server.health.BackendWatchdog;
 import me.internalizable.numdrassl.server.ssl.CertificateGenerator;
 import me.internalizable.numdrassl.server.transfer.PlayerTransfer;
 import me.internalizable.numdrassl.server.transfer.ReferralManager;
@@ -78,7 +79,8 @@ public final class ProxyCore {
     private final ProxyAuthenticator authenticator;
     private final ReferralManager referralManager;
     private final PlayerTransfer playerTransfer;
-    private final BackendHealthCache backendHealthCache;
+    private final BackendHealthManager backendHealthManager;
+    private final BackendWatchdog backendWatchdog;
 
     // Networking
     private EventLoopGroup eventLoopGroup;
@@ -103,7 +105,8 @@ public final class ProxyCore {
         this.backendConnector = new BackendConnector(this);
         this.referralManager = new ReferralManager(this);
         this.playerTransfer = new PlayerTransfer(this);
-        this.backendHealthCache = new BackendHealthCache();
+        this.backendHealthManager = new BackendHealthManager(this);
+        this.backendWatchdog = new BackendWatchdog(this);
         this.authenticator = createAuthenticator();
     }
 
@@ -129,6 +132,7 @@ public final class ProxyCore {
         }
 
         logStartupInfo();
+        backendWatchdog.initialize();
         initializeMetrics();
         initializeAuthenticator();
 
@@ -379,6 +383,7 @@ public final class ProxyCore {
         backendConnector.shutdown();
         referralManager.shutdown();
         authenticator.shutdown();
+        backendWatchdog.shutdown();
 
         if (serverChannel != null) {
             serverChannel.close().syncUninterruptibly();
@@ -436,5 +441,7 @@ public final class ProxyCore {
     }
 
     @Nullable
-    public BackendHealthCache getBackendHealthCache() { return backendHealthCache; }
+    public BackendHealthManager getBackendHealthManager() {
+        return backendHealthManager;
+    }
 }

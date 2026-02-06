@@ -6,6 +6,7 @@ import com.hypixel.hytale.protocol.packets.connection.Disconnect;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.util.ReferenceCountUtil;
 import me.internalizable.numdrassl.profiling.ProxyMetrics;
 import me.internalizable.numdrassl.server.ProxyCore;
 import me.internalizable.numdrassl.session.ProxySession;
@@ -14,6 +15,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -30,6 +33,14 @@ public final class BackendPacketHandler extends SimpleChannelInboundHandler<Obje
     private final ProxyCore proxyCore;
     private final ProxySession session;
 
+    /**
+     * Buffer for raw packets received within a single Netty read batch.
+     * All buffered packets are submitted as a single cross-event-loop task
+     * in {@link #channelReadComplete(ChannelHandlerContext)}, reducing
+     * scheduling overhead from O(N) to O(1) per batch.
+     */
+    private List<ByteBuf> pendingRawToClient = new ArrayList<>();
+
     public BackendPacketHandler(@Nonnull ProxyCore proxyCore, @Nonnull ProxySession session) {
         this.proxyCore = Objects.requireNonNull(proxyCore, "proxyCore");
         this.session = Objects.requireNonNull(session, "session");
@@ -37,15 +48,18 @@ public final class BackendPacketHandler extends SimpleChannelInboundHandler<Obje
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Object msg) throws Exception {
+        if (session.getCurrentBackend() != null && proxyCore.getBackendHealthManager() != null) {
+            proxyCore.getBackendHealthManager().get(session.getCurrentBackend()).markPassiveResponse();
+        }
+
         if (msg instanceof ByteBuf raw) {
-            ProxyMetrics.getInstance().recordPacketFromBackend("RawPacket", raw.readableBytes());
-            handleRawPacket(ctx, raw);
+            handleRawPacket(raw);
             return;
         }
 
         if (!(msg instanceof Packet packet)) {
             LOGGER.warn("Session {}: Unknown message type from backend: {}",
-                session.getSessionId(), msg.getClass().getName());
+                    session.getSessionId(), msg.getClass().getName());
             return;
         }
 
@@ -53,14 +67,40 @@ public final class BackendPacketHandler extends SimpleChannelInboundHandler<Obje
         dispatchPacket(packet);
     }
 
+    @Override
+    public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+        // Submit all buffered raw packets as a single cross-event-loop task.
+        // This reduces scheduling overhead from O(N) tasks to O(1) per read batch,
+        // dramatically reducing latency during high-throughput chunk loading.
+        if (!pendingRawToClient.isEmpty()) {
+            List<ByteBuf> batch = pendingRawToClient;
+            pendingRawToClient = new ArrayList<>();
+            session.sendRawBatchToClient(batch);
+        }
+        super.channelReadComplete(ctx);
+    }
+
     // ==================== Packet Routing ====================
 
-    private void handleRawPacket(ChannelHandlerContext ctx, ByteBuf raw) {
-        if (proxyCore.getConfig().isDebugMode()) {
-            int packetId = raw.readableBytes() >= 8 ? raw.getIntLE(4) : -1;
-            LOGGER.debug("Session {}: Forwarding raw backend packet id={}", session.getSessionId(), packetId);
+    private void handleRawPacket(ByteBuf raw) {
+        // Fast path: buffer raw packets for batch submission.
+        // Raw ByteBuf packets are unregistered protocol packets (primarily chunk data)
+        // that cannot be intercepted by plugins. Instead of submitting each packet as a
+        // separate cross-event-loop task, we buffer them and submit the entire batch
+        // as a single task in channelReadComplete().
+        if (session.getState() == SessionState.CONNECTED) {
+            int bytes = raw.readableBytes();
+            if (proxyCore.getConfig().isDebugMode()) {
+                int packetId = bytes >= 8 ? raw.getIntLE(4) : -1;
+                LOGGER.debug("Session {}: Buffering raw backend packet id={}", session.getSessionId(), packetId);
+            }
+            pendingRawToClient.add(raw.retain());
+            ProxyMetrics.getInstance().recordRawBytesFromBackend(bytes);
+            ProxyMetrics.getInstance().recordRawBytesToClient(bytes);
+        } else {
+            LOGGER.debug("Session {}: Dropping raw backend packet - not connected (state={})",
+                session.getSessionId(), session.getState());
         }
-        session.sendToClient(raw.retain());
     }
 
     private void dispatchPacket(Packet packet) {
@@ -117,6 +157,11 @@ public final class BackendPacketHandler extends SimpleChannelInboundHandler<Obje
             return;
         }
 
+        if (proxyCore.getConfig().isFallbackEnabled()) {
+            proxyCore.getBackendConnector().handleBackendDisconnect(session, session.getCurrentBackend());
+            return;
+        }
+
         forwardToClient(disconnect);
         session.disconnect("Backend disconnected: " + disconnect.reason);
     }
@@ -136,6 +181,7 @@ public final class BackendPacketHandler extends SimpleChannelInboundHandler<Obje
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         LOGGER.info("Session {}: Backend stream closed", session.getSessionId());
+        releasePendingBuffers();
 
         if (shouldDisconnectClient()) {
             session.disconnect("Backend connection lost");
@@ -144,16 +190,25 @@ public final class BackendPacketHandler extends SimpleChannelInboundHandler<Obje
         super.channelInactive(ctx);
     }
 
+    private void releasePendingBuffers() {
+        for (ByteBuf buf : pendingRawToClient) {
+            ReferenceCountUtil.safeRelease(buf);
+        }
+        pendingRawToClient.clear();
+    }
+
     private boolean shouldDisconnectClient() {
         SessionState state = session.getState();
         return state != SessionState.DISCONNECTED
-            && state != SessionState.TRANSFERRING
-            && !session.isServerTransfer();
+                && state != SessionState.TRANSFERRING
+                && !session.isServerTransfer()
+                && !proxyCore.getConfig().isFallbackEnabled();
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         LOGGER.error("Session {}: Exception in backend handler", session.getSessionId(), cause);
+        releasePendingBuffers();
         session.disconnect("Backend error: " + cause.getMessage());
     }
 }

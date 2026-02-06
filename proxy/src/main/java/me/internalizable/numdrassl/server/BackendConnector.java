@@ -21,6 +21,7 @@ import me.internalizable.numdrassl.event.packet.ProxyPong;
 import me.internalizable.numdrassl.pipeline.BackendPacketHandler;
 import me.internalizable.numdrassl.pipeline.codec.ProxyPacketDecoder;
 import me.internalizable.numdrassl.pipeline.codec.ProxyPacketEncoder;
+import me.internalizable.numdrassl.api.event.server.ServerDisconnectedResult;
 import me.internalizable.numdrassl.profiling.ProxyMetrics;
 import me.internalizable.numdrassl.api.chat.ChatMessageBuilder;
 import me.internalizable.numdrassl.session.ProxySession;
@@ -99,7 +100,7 @@ public final class BackendConnector {
      * Initializes the SSL context using the proxy's certificate.
      *
      * @param certPath path to the certificate file
-     * @param keyPath path to the private key file
+     * @param keyPath  path to the private key file
      */
     public void initSslContext(@Nonnull String certPath, @Nonnull String keyPath) {
         Objects.requireNonNull(certPath, "certPath");
@@ -113,13 +114,13 @@ public final class BackendConnector {
 
         try {
             this.sslContext = QuicSslContextBuilder.forClient()
-                .trustManager(io.netty.handler.ssl.util.InsecureTrustManagerFactory.INSTANCE)
-                .keyManager(keyFile, null, certFile)
-                .applicationProtocols(
-                    "hytale/10", "hytale/9", "hytale/8", "hytale/7", "hytale/6",
-                    "hytale/5", "hytale/4", "hytale/3", "hytale/2", "hytale/1"
-                )
-                .build();
+                    .trustManager(io.netty.handler.ssl.util.InsecureTrustManagerFactory.INSTANCE)
+                    .keyManager(keyFile, null, certFile)
+                    .applicationProtocols(
+                            "hytale/10", "hytale/9", "hytale/8", "hytale/7", "hytale/6",
+                            "hytale/5", "hytale/4", "hytale/3", "hytale/2", "hytale/1"
+                    )
+                    .build();
         } catch (Exception e) {
             throw new IllegalStateException("Failed to create SSL context", e);
         }
@@ -128,7 +129,7 @@ public final class BackendConnector {
     private void validateCertificateFiles(File certFile, File keyFile) {
         if (!certFile.exists() || !keyFile.exists()) {
             throw new IllegalStateException(
-                "Certificate files not found: " + certFile.getPath() + ", " + keyFile.getPath()
+                    "Certificate files not found: " + certFile.getPath() + ", " + keyFile.getPath()
             );
         }
         LOGGER.info("Using proxy certificate for backend connections: {}", certFile.getPath());
@@ -212,6 +213,20 @@ public final class BackendConnector {
         return result.getTargetServer() != null ? result.getTargetServer() : backend;
     }
 
+    private ServerDisconnectedResult fireServerDisconnectedEvent(ProxySession session, String disconnectReason) {
+        var apiProxy = proxyCore.getApiProxy();
+        if (apiProxy == null) {
+            return null;
+        }
+
+        var eventBridge = apiProxy.getEventBridge();
+        if (eventBridge == null) {
+            return null;
+        }
+
+        return eventBridge.fireServerDisconnectedEvent(session, disconnectReason);
+    }
+
     private void handleTransferDenied(ProxySession session, String serverName) {
         session.setState(SessionState.CONNECTED);
         session.setServerTransfer(false);
@@ -226,7 +241,7 @@ public final class BackendConnector {
 
         String action = isReconnect ? "Reconnecting" : "Connecting";
         LOGGER.info("Session {}: {} to backend {} ({}:{})",
-            session.getSessionId(), action, backend.getName(), backend.getHost(), backend.getPort());
+                session.getSessionId(), action, backend.getName(), backend.getHost(), backend.getPort());
 
         session.setCurrentBackend(backend);
 
@@ -242,22 +257,22 @@ public final class BackendConnector {
         }
     }
 
-    private Bootstrap createBootstrap() {
+    public Bootstrap createBootstrap() {
         ChannelHandler codec = new QuicClientCodecBuilder()
-            .sslContext(sslContext)
-            .congestionControlAlgorithm(QuicCongestionControlAlgorithm.BBR)
-            .maxIdleTimeout(proxyCore.getConfig().getConnectionTimeoutSeconds(), TimeUnit.SECONDS)
-            .initialMaxData(10_000_000)
-            .initialMaxStreamDataBidirectionalLocal(1_000_000)
-            .initialMaxStreamDataBidirectionalRemote(1_000_000)
-            .initialMaxStreamsBidirectional(100)
-            .initialMaxStreamsUnidirectional(100)
-            .build();
+                .sslContext(sslContext)
+                .congestionControlAlgorithm(QuicCongestionControlAlgorithm.BBR)
+                .maxIdleTimeout(proxyCore.getConfig().getConnectionTimeoutSeconds(), TimeUnit.SECONDS)
+                .initialMaxData(10_000_000)
+                .initialMaxStreamDataBidirectionalLocal(1_000_000)
+                .initialMaxStreamDataBidirectionalRemote(1_000_000)
+                .initialMaxStreamsBidirectional(100)
+                .initialMaxStreamsUnidirectional(100)
+                .build();
 
         return new Bootstrap()
-            .group(group)
-            .channel(NioDatagramChannel.class)
-            .handler(codec);
+                .group(group)
+                .channel(NioDatagramChannel.class)
+                .handler(codec);
     }
 
     private void connectQuicChannel(
@@ -271,19 +286,26 @@ public final class BackendConnector {
         boolean debugMode = proxyCore.getConfig().isDebugMode();
 
         QuicChannel.newBootstrap(datagramChannel)
-            .streamHandler(createStreamHandler(session, debugMode))
-            .remoteAddress(address)
-            .connect()
-            .addListener(future -> {
-                if (future.isSuccess()) {
-                    QuicChannel quicChannel = (QuicChannel) future.getNow();
-                    onConnected(session, quicChannel, backend, connectPacket, isReconnect, debugMode);
-                } else {
-                    LOGGER.error("Session {}: Failed to connect to backend",
-                        session.getSessionId(), future.cause());
-                    handleConnectionFailure(session, backend.getName(), isReconnect);
-                }
-            });
+                .streamHandler(createStreamHandler(session, debugMode))
+                .remoteAddress(address)
+                .connect()
+                .addListener(future -> {
+                    if (future.isSuccess()) {
+                        QuicChannel quicChannel = (QuicChannel) future.getNow();
+
+                        quicChannel.closeFuture().addListener(closeFuture -> {
+                            LOGGER.warn("Session {}: Backend {} connection closed", session.getSessionId(), backend.getName());
+
+                            handleBackendDisconnect(session, backend);
+                        });
+
+                        onConnected(session, quicChannel, backend, connectPacket, isReconnect, debugMode);
+                    } else {
+                        LOGGER.error("Session {}: Failed to connect to backend",
+                                session.getSessionId(), future.cause());
+                        handleConnectionFailure(session, backend.getName(), isReconnect);
+                    }
+                });
     }
 
     private ChannelInitializer<QuicStreamChannel> createStreamHandler(ProxySession session, boolean debugMode) {
@@ -306,7 +328,7 @@ public final class BackendConnector {
             boolean debugMode) {
 
         LOGGER.info("Session {}: Connected to backend {} QUIC channel",
-            session.getSessionId(), backend.getName());
+                session.getSessionId(), backend.getName());
         session.setBackendChannel(quicChannel);
         ProxyMetrics.getInstance().recordBackendConnection(backend.getName());
 
@@ -322,16 +344,16 @@ public final class BackendConnector {
             boolean debugMode) {
 
         quicChannel.createStream(QuicStreamType.BIDIRECTIONAL, createStreamHandler(session, debugMode))
-            .addListener(future -> {
-                if (future.isSuccess()) {
-                    QuicStreamChannel stream = (QuicStreamChannel) future.getNow();
-                    onStreamCreated(session, stream, backend, connectPacket, isReconnect);
-                } else {
-                    LOGGER.error("Session {}: Failed to create backend stream",
-                        session.getSessionId(), future.cause());
-                    handleConnectionFailure(session, backend.getName(), isReconnect);
-                }
-            });
+                .addListener(future -> {
+                    if (future.isSuccess()) {
+                        QuicStreamChannel stream = (QuicStreamChannel) future.getNow();
+                        onStreamCreated(session, stream, backend, connectPacket, isReconnect);
+                    } else {
+                        LOGGER.error("Session {}: Failed to create backend stream",
+                                session.getSessionId(), future.cause());
+                        handleConnectionFailure(session, backend.getName(), isReconnect);
+                    }
+                });
     }
 
     private void onStreamCreated(
@@ -343,13 +365,16 @@ public final class BackendConnector {
 
         session.setBackendStream(stream);
         session.setCurrentBackend(backend);
+        if (proxyCore.getBackendHealthManager() != null) {
+            proxyCore.getBackendHealthManager().get(backend).markSessionBound();
+        }
 
         LOGGER.info("Session {}: Backend stream created for {}, forwarding Connect packet",
-            session.getSessionId(), backend.getName());
+                session.getSessionId(), backend.getName());
 
         Connect signedConnect = createSignedConnectPacket(session, connectPacket);
         LOGGER.debug("Session {}: Writing Connect to backend stream - final check: protocolCrc={}, buildNumber={}, clientVersion='{}'",
-            session.getSessionId(), signedConnect.protocolCrc, signedConnect.protocolBuildNumber, signedConnect.clientVersion);
+                session.getSessionId(), signedConnect.protocolCrc, signedConnect.protocolBuildNumber, signedConnect.clientVersion);
         stream.writeAndFlush(signedConnect);
         session.setState(SessionState.AUTHENTICATING);
 
@@ -367,36 +392,102 @@ public final class BackendConnector {
         }
     }
 
+    public void handleBackendDisconnect(ProxySession session, BackendServer backend) {
+        if (!session.isActive()) return;
+        if (session.getCurrentBackend() != backend) return;
+        if (session.isServerTransfer()) return;
+        if (!proxyCore.getConfig().isFallbackEnabled()) return;
+
+        LOGGER.debug("Starting transfer for {} from backend {}", session.getSessionId(), backend.getName());
+
+        session.setState(SessionState.TRANSFERRING);
+
+        String disconnectReason = "Backend server disconnected";
+
+        BackendServer fallbackServer = proxyCore.getConfig().getBackendByName(proxyCore.getConfig().getGlobalFallbackServer());
+        if (fallbackServer == null) {
+            session.disconnect(disconnectReason);
+            return;
+        }
+
+        if (backend.getFallbackServer() == null || backend.getFallbackServer().isBlank()) {
+            if (backend.getName().equals(fallbackServer.getName())) {
+                disconnectReason = "Fallback server is down";
+                session.disconnect(disconnectReason);
+                return;
+            }
+        } else {
+            fallbackServer = proxyCore.getConfig().getBackendByName(backend.getFallbackServer());
+            if (fallbackServer == null) {
+                session.disconnect(disconnectReason);
+                return;
+            }
+        }
+
+        LOGGER.debug("Transfering for {} from backend {} to {}", session.getSessionId(), backend.getName(), fallbackServer.getName());
+
+        ServerDisconnectedResult eventResult = fireServerDisconnectedEvent(session, disconnectReason);
+        if (eventResult != null && eventResult.getFallbackServer() != null) {
+            fallbackServer = proxyCore.getConfig().getBackendByName(eventResult.getFallbackServer().getName());
+            if (fallbackServer == null) {
+                session.disconnect(disconnectReason);
+                return;
+            }
+            if (eventResult.getDisconnectReason() != null) {
+                disconnectReason = eventResult.getDisconnectReason();
+                session.disconnect(disconnectReason);
+            }
+            return;
+        }
+
+        LOGGER.info("Session {}: Transferring to default server {}", session.getSessionId(), fallbackServer.getName());
+
+        proxyCore.getPlayerTransfer().transfer(session, fallbackServer)
+                .whenComplete((transferResult, ex) -> {
+                    if (!transferResult.isSuccess()) {
+                        if (transferResult.getMessage() == null) {
+                            session.disconnect("Failed to transfer to other server");
+                            return;
+                        }
+                        session.disconnect(transferResult.getMessage());
+                    }
+                })
+                .exceptionally(ex -> {
+                    session.disconnect(ex.getMessage());
+                    return null;
+                });
+    }
+
     // ==================== Signed Connect Packet ====================
 
     private Connect createSignedConnectPacket(ProxySession session, Connect original) {
         LOGGER.debug("Session {}: Original Connect packet - protocolCrc={}, buildNumber={}, clientVersion='{}'",
-            session.getSessionId(), original.protocolCrc, original.protocolBuildNumber, original.clientVersion);
+                session.getSessionId(), original.protocolCrc, original.protocolBuildNumber, original.clientVersion);
 
         String backendName = session.getCurrentBackend() != null
-            ? session.getCurrentBackend().getName()
-            : "unknown";
+                ? session.getCurrentBackend().getName()
+                : "unknown";
 
         byte[] referralData = SecretMessageUtil.createPlayerInfoReferral(
-            session.getPlayerUuid(),
-            session.getUsername(),
-            backendName,
-            session.getClientAddress(),
-            proxySecret
+                session.getPlayerUuid(),
+                session.getUsername(),
+                backendName,
+                session.getClientAddress(),
+                proxySecret
         );
 
         LOGGER.debug("Session {}: Created signed referral ({} bytes) for {}",
-            session.getSessionId(), referralData.length, backendName);
+                session.getSessionId(), referralData.length, backendName);
 
         Connect proxyConnect = new Connect(original);
         proxyConnect.referralData = referralData;
         proxyConnect.referralSource = createReferralSource();
 
         LOGGER.debug("Session {}: Sending Connect to backend - protocolCrc={}, buildNumber={}, clientVersion='{}', uuid={}, username={}, referralSource={}:{}",
-            session.getSessionId(), proxyConnect.protocolCrc, proxyConnect.protocolBuildNumber,
-            proxyConnect.clientVersion, proxyConnect.uuid, proxyConnect.username,
-            proxyConnect.referralSource != null ? proxyConnect.referralSource.host : "null",
-            proxyConnect.referralSource != null ? proxyConnect.referralSource.port : 0);
+                session.getSessionId(), proxyConnect.protocolCrc, proxyConnect.protocolBuildNumber,
+                proxyConnect.clientVersion, proxyConnect.uuid, proxyConnect.username,
+                proxyConnect.referralSource != null ? proxyConnect.referralSource.host : "null",
+                proxyConnect.referralSource != null ? proxyConnect.referralSource.port : 0);
 
         return proxyConnect;
     }
@@ -414,109 +505,14 @@ public final class BackendConnector {
         return new HostAddress(host, (short) port);
     }
 
-    public CompletableFuture<Boolean> checkBackendAlive(BackendServer backend, long timeoutMs) {
-        Objects.requireNonNull(backend, "backend");
-        CompletableFuture<Boolean> future = new CompletableFuture<>();
-
-        InetSocketAddress address = new InetSocketAddress(backend.getHost(), backend.getPort());
-
-        Bootstrap bootstrap = createBootstrap();
-        bootstrap.bind(0).addListener((ChannelFutureListener) bindFuture -> {
-            if (!bindFuture.isSuccess()) {
-                future.complete(false);
-                return;
-            }
-
-            Channel datagramChannel = bindFuture.channel();
-
-            datagramChannel.eventLoop().schedule(() -> {
-                if (future.complete(false)) {
-                    datagramChannel.close();
-                }
-            }, timeoutMs, TimeUnit.MILLISECONDS);
-
-            QuicChannel.newBootstrap(datagramChannel)
-                    .remoteAddress(address)
-                    .streamHandler(new ChannelInitializer<QuicStreamChannel>() {
-                        @Override
-                        protected void initChannel(QuicStreamChannel ch) throws Exception {
-                        }
-                    })
-                    .connect()
-                    .addListener(connectFuture -> {
-                        if (!connectFuture.isSuccess()) {
-                            if (future.complete(false)) {
-                                datagramChannel.close();
-                            }
-                            return;
-                        }
-
-                        QuicChannel quicChannel = (QuicChannel) connectFuture.getNow();
-
-                        quicChannel.createStream(QuicStreamType.BIDIRECTIONAL, new ChannelInitializer<QuicStreamChannel>() {
-                            @Override
-                            protected void initChannel(QuicStreamChannel ch) {
-                                boolean debugMode = proxyCore.getConfig().isDebugMode();
-
-                                ch.pipeline().addLast(new ProxyPacketDecoder("backend-ping", debugMode));
-                                ch.pipeline().addLast(new ProxyPacketEncoder("backend-ping", debugMode));
-
-                                ch.pipeline().addLast(new SimpleChannelInboundHandler<Packet>() {
-                                    @Override
-                                    protected void channelRead0(ChannelHandlerContext ctx, Packet packet) {
-                                        if (packet instanceof ProxyPong) {
-                                            if (!future.isDone()) {
-                                                future.complete(true);
-                                            }
-                                            ctx.close();
-                                            return;
-                                        }
-                                    }
-                                });
-                            }
-                        }).addListener(streamFuture -> {
-                            if (!streamFuture.isSuccess()) {
-                                if (future.complete(false)) {
-                                    quicChannel.eventLoop().execute(() -> quicChannel.close());
-                                    datagramChannel.close();
-                                }
-                                return;
-                            }
-
-                            QuicStreamChannel stream = (QuicStreamChannel) streamFuture.getNow();
-
-                            ProxyPing ping = new ProxyPing();
-                            ping.timestamp = System.currentTimeMillis();
-                            ping.nonce = new SecureRandom().nextLong();
-
-                            stream.writeAndFlush(ping).addListener(writeFuture -> {
-                                if (!writeFuture.isSuccess()) {
-                                    if (future.complete(false)) {
-                                        stream.close();
-                                    }
-                                }
-                            });
-                        });
-
-                        future.whenComplete((ok, err) -> {
-                            quicChannel.eventLoop().execute(quicChannel::close);
-                            datagramChannel.close();
-                        });
-                    });
-        });
-
-        return future;
-    }
-
-
     // ==================== Transfer Messages ====================
 
     private void sendTransferSuccessMessage(ProxySession session, String serverName) {
         session.sendChatMessage(
-            ChatMessageBuilder.create()
-                .gold("Connecting to ")
-                .bold(serverName, ChatMessageBuilder.Colors.GREEN)
-                .gold("...")
+                ChatMessageBuilder.create()
+                        .gold("Connecting to ")
+                        .bold(serverName, ChatMessageBuilder.Colors.GREEN)
+                        .gold("...")
         );
     }
 
@@ -526,10 +522,10 @@ public final class BackendConnector {
         }
 
         session.sendChatMessage(
-            ChatMessageBuilder.create()
-                .red("Failed to connect to ")
-                .bold(serverName, ChatMessageBuilder.Colors.GOLD)
-                .red(". Please try again later.")
+                ChatMessageBuilder.create()
+                        .red("Failed to connect to ")
+                        .bold(serverName, ChatMessageBuilder.Colors.GOLD)
+                        .red(". Please try again later.")
         );
     }
 

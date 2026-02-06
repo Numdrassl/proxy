@@ -261,13 +261,14 @@ Priorities (in order): `FIRST` → `EARLY` → `NORMAL` → `LATE` → `LAST`
 | `DisconnectEvent` | Player disconnected | No |
 
 #### Player Events
-| Event | Description | Cancellable |
-|-------|-------------|-------------|
-| `PlayerChatEvent` | Player sends chat message | Yes |
-| `PlayerCommandEvent` | Player executes command | Yes |
-| `PlayerMoveEvent` | Player moves | Yes |
-| `PlayerBlockPlaceEvent` | Player places block | Yes |
-| `PlayerSlotChangeEvent` | Player changes hotbar slot | No |
+| Event                            | Description                                                          | Cancellable |
+|----------------------------------|----------------------------------------------------------------------|-------------|
+| `PlayerChatEvent`                | Player sends chat message                                            | Yes         |
+| `PlayerCommandEvent`             | Player executes command                                              | Yes         |
+| `PlayerMoveEvent`                | Player moves                                                         | Yes         |
+| `PlayerBlockPlaceEvent`          | Player places block                                                  | Yes         |
+| `PlayerSlotChangeEvent`          | Player changes hotbar slot                                           | No          |
+| `PlayerChooseInitialServerEvent` | Determines which backend server the player will connect to initially | No          |
 
 #### Server Events
 | Event | Description | Cancellable |

@@ -1,6 +1,8 @@
 package me.internalizable.numdrassl.plugin.bridge;
 
 import com.hypixel.hytale.protocol.Packet;
+import me.internalizable.numdrassl.api.event.server.ServerDisconnectedResult;
+import me.internalizable.numdrassl.api.event.player.PlayerChooseInitialServerEvent;
 import me.internalizable.numdrassl.config.BackendServer;
 import me.internalizable.numdrassl.event.mapping.PacketEventRegistry;
 import me.internalizable.numdrassl.event.packet.PacketEvent;
@@ -80,11 +82,23 @@ public final class ApiEventBridge implements PacketListener {
         lifecycleHandler.onServerConnected(session, previousSession);
     }
 
+    public ServerDisconnectedResult fireServerDisconnectedEvent(@Nonnull ProxySession session, String disconnectReason) {
+        return lifecycleHandler.onServerDisconnected(session, disconnectReason);
+    }
+
     /**
      * Fires PostLoginEvent after authentication completes.
      */
     public void firePostLoginEvent(@Nonnull ProxySession session) {
         lifecycleHandler.onPostLogin(session);
+    }
+
+
+    /**
+     * Delegates the firing of {@link PlayerChooseInitialServerEvent}.
+     */
+    public PlayerChooseInitialServerEvent.InitialServerResult firePlayerChooseInitialServerEvent(@Nonnull ProxySession session) {
+        return lifecycleHandler.onPlayerChooseInitialServerEvent(session);
     }
 
     // ==================== Accessors ====================

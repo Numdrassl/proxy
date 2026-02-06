@@ -179,14 +179,17 @@ backends:
     host: "127.0.0.1"
     port: 5520
     defaultServer: true
+    fallbackServer: null
   - name: "survival"
     host: "192.168.1.100"
     port: 5520
     defaultServer: false
+    fallbackServer: null
   - name: "minigames"
     host: "192.168.1.101"
     port: 5520
     defaultServer: false
+    fallbackServer: null
 
 # ==================== Metrics Configuration ====================
 
@@ -214,6 +217,13 @@ redisPort: 6379
 redisPassword: null
 redisSsl: false
 redisDatabase: 0
+
+
+# ==================== Fallback Configuration ====================
+# Enable/disable automatic fallback when a backend becomes unavailable
+fallbackEnabled: true
+# Global fallback server (used if no backend-specific fallback is set)
+globalFallbackServer: "lobby"
 
 # ==================== Proxy Protocol (HAProxy) ====================
 
