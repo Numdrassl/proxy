@@ -197,19 +197,35 @@ public final class NumdrasslPlayer implements Player {
     public CompletableFuture<TransferResult> transfer(@Nonnull RegisteredServer server) {
         Objects.requireNonNull(server, "server");
 
-        // Find the backend server config
+        // Check if this is a local server (in config)
         var config = proxy.getCore().getConfig();
         var backend = config.getBackendByName(server.getName());
 
-        if (backend == null) {
-            return CompletableFuture.completedFuture(
-                TransferResult.failure("Backend server not found: " + server.getName())
-            );
+        if (backend != null) {
+            // Local server - use standard transfer
+            return proxy.getCore().getPlayerTransfer().transfer(session, backend);
         }
 
-        // Use PlayerTransfer which sends ClientReferral
-        return proxy.getCore().getPlayerTransfer().transfer(session, backend);
+        // Check if this is a remote server (from another proxy)
+        if (proxy.getClusterManager().isClusterMode()) {
+            var clusterManager = (me.internalizable.numdrassl.cluster.NumdrasslClusterManager) proxy.getClusterManager();
+            var transferHandler = clusterManager.getTransferHandler();
+            var serverListHandler = ((me.internalizable.numdrassl.plugin.NumdrasslProxy) proxy).getServerListHandler();
+            
+            if (transferHandler != null && serverListHandler != null) {
+                Optional<String> owningProxy = serverListHandler.findProxyForServer(server.getName());
+                if (owningProxy.isPresent()) {
+                    // Remote server - transfer to owning proxy first
+                    return transferHandler.transferToProxy(session, owningProxy.get(), server.getName());
+                }
+            }
+        }
+
+        return CompletableFuture.completedFuture(
+            TransferResult.failure("Backend server not found: " + server.getName())
+        );
     }
+    
 
     @Override
     @Nonnull
