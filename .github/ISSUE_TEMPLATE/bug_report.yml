@@ -1,0 +1,101 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in Numdrassl
+title: "[Bug]: "
+labels:
+  - bug
+  - needs-triage
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to report an issue.
+        Please fill out the form as completely as possible so we can reproduce and fix the problem.
+
+  - type: input
+    id: proxy_version
+    attributes:
+      label: Numdrassl Proxy Version
+      description: "Version or release tag you are using (example: v1.2)"
+      placeholder: v1.2
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: Operating system and architecture
+      placeholder: Linux / Windows
+    validations:
+      required: true
+
+  - type: input
+    id: hytale_version
+    attributes:
+      label: Hytale Server Version
+      description: Hytale server version(s) in use
+      placeholder: 2026.02.06-aa1b071c2
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: Describe what happened and what you expected to happen
+      placeholder: |
+        What happened:
+        What you expected to happen:
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Provide clear steps so the issue can be reproduced
+      placeholder: |
+        1. Start Numdrassl Proxy
+        2. Connect to server
+        3. Run /server lobby
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log output (remove sensitive data)
+      placeholder: Paste logs here
+      render: shell
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: Relevant parts of your config.yml (remove secrets)
+      placeholder: Paste configuration here
+      render: yaml
+
+  - type: dropdown
+    id: reproducible
+    attributes:
+      label: Is the issue reproducible?
+      options:
+        - Always
+        - Sometimes
+        - Rarely
+        - Unable to reproduce
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: I am using the latest available release
+          required: true
+        - label: I have searched existing issues before opening this report
+          required: true
