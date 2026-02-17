@@ -40,3 +40,11 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### Extra ###
+docs/
+.github/
+.dockerignore
+Dockerfile
+.gitignore
+*.md
