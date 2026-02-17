@@ -96,6 +96,10 @@ public final class ProxyAuthenticator implements AutoCloseable {
      * Initializes the authenticator and attempts to restore a previous session.
      */
     public void initialize() {
+        if (sessionManager.loadSessionFromEnvironment()) {
+            LOGGER.info("Using provided session from environment variables");
+            return;
+        }
         // Try to restore session from stored credentials
         if (credentialStore.load()) {
             LOGGER.info("Found stored credentials, attempting to restore session...");

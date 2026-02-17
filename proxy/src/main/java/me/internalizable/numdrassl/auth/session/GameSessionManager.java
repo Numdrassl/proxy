@@ -1,6 +1,5 @@
 package me.internalizable.numdrassl.auth.session;
 
-import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -16,7 +15,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -47,6 +48,31 @@ public final class GameSessionManager implements AutoCloseable {
         this.refreshScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "GameSession-Refresh"); t.setDaemon(true); return t;
         });
+    }
+
+    public boolean loadSessionFromEnvironment() {
+        String existingSession = System.getenv("HYTALE_SERVER_SESSION_TOKEN");
+        String existingIdentity = System.getenv("HYTALE_SERVER_IDENTITY_TOKEN");
+        if (existingSession == null || existingIdentity == null) {
+            return false;
+        }
+        String payloadBase64String = existingIdentity.split("\\.").length > 1 ? existingIdentity.split("\\.")[1] : null;
+        if (payloadBase64String == null) {
+            LOGGER.error("Invalid identity token format in environment variable");
+            return false;
+        }
+        String payloadJsonString = new String(Base64.getDecoder().decode(payloadBase64String), StandardCharsets.UTF_8);
+        JsonObject payload = JsonParser.parseString(payloadJsonString).getAsJsonObject();
+        int exp = payload.get("exp").getAsInt();
+        UUID sub = UUID.fromString(payload.get("sub").getAsString());
+        String username = payload.get("profile").getAsJsonObject().get("username").getAsString();
+        credentialStore.setProfileUuid(sub);
+        credentialStore.setProfileUsername(username);
+        this.sessionToken = Objects.requireNonNull(existingSession);
+        this.identityToken = Objects.requireNonNull(existingIdentity);
+        this.sessionExpiry = Instant.ofEpochSecond(exp);
+        scheduleRefresh();
+        return true;
     }
 
     public boolean createSession() {
