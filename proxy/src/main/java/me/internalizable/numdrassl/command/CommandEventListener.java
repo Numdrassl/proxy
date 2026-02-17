@@ -40,16 +40,13 @@ public class CommandEventListener {
             LOGGER.debug("Executing proxy command: /{} for player {}",
                 command, event.getPlayer().getUsername());
 
-            // Create a command source from the player
-            CommandSource source = new PlayerCommandSource(event.getPlayer());
-
             // Execute the command
             String fullCommand = event.getCommand();
             if (event.getArgs().length > 0) {
                 fullCommand += " " + String.join(" ", event.getArgs());
             }
 
-            CommandResult result = commandManager.execute(source, fullCommand);
+            CommandResult result = commandManager.execute(event.getPlayer(), fullCommand);
 
             // Send result message if any
             if (result.getMessage() != null) {
@@ -65,55 +62,4 @@ public class CommandEventListener {
             }
         }
     }
-
-    /**
-     * Command source implementation for players.
-     * Delegates permission checks to the player's permission function.
-     */
-    private static class PlayerCommandSource implements CommandSource {
-        private final Player player;
-
-        PlayerCommandSource(Player player) {
-            this.player = player;
-        }
-
-        @Override
-        public void sendMessage(@Nonnull String message) {
-            player.sendMessage(message);
-        }
-
-        @Override
-        @Nonnull
-        public Tristate getPermissionValue(@Nonnull String permission) {
-            return player.getPermissionValue(permission);
-        }
-
-        @Override
-        public boolean hasPermission(@Nonnull String permission) {
-            return player.hasPermission(permission);
-        }
-
-        @Override
-        @Nonnull
-        public PermissionFunction getPermissionFunction() {
-            return player.getPermissionFunction();
-        }
-
-        @Override
-        public void setPermissionFunction(@Nonnull PermissionFunction function) {
-            player.setPermissionFunction(function);
-        }
-
-        @Override
-        @Nonnull
-        public java.util.Optional<Player> asPlayer() {
-            return java.util.Optional.of(player);
-        }
-
-        @Override
-        public boolean isConsole() {
-            return false;
-        }
-    }
 }
-
